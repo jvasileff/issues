@@ -76,6 +76,12 @@ help text is intentionally exhaustive.
 | `issues edit <id>` | Interactive `$EDITOR` flow (human-only; requires a TTY) |
 | `issues drafts [--resume id \| --diff id \| --discard id]` | List/manage unsaved edit drafts |
 
+In a terminal, `issues show` renders the issue for reading: a bold header
+plus the body formatted as markdown (headers, bullets, code blocks), wrapped
+to the terminal width. When piped or redirected, when `NO_COLOR` is set, or
+with `--plain`, it prints the canonical serialization instead — front-matter
+plus raw body, byte-stable for scripts.
+
 A composable research loop for large plan documents: `grep` finds a hit at
 line 120 → `read 42 --offset 110 --limit 30` shows the neighborhood →
 `str-replace` edits it.

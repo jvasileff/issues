@@ -6,7 +6,7 @@ mod merge;
 mod model;
 mod output;
 
-use std::io::{Read as _, Write as _};
+use std::io::{IsTerminal as _, Read as _, Write as _};
 use std::path::PathBuf;
 use std::process;
 use std::str::FromStr;
@@ -118,13 +118,23 @@ enum Cmd {
 
     /// Print one issue in full: front-matter plus markdown body
     ///
-    /// Output is the canonical serialization: a '---'-delimited front-matter
-    /// block (id, title, status, parent when set) followed by the raw
-    /// markdown body. This is the same format 'edit' checks out into
-    /// $EDITOR. For a windowed, line-numbered view of a large body, use
-    /// 'read' instead.
-    #[command(after_long_help = "Example:\n  issues show 42")]
-    Show { id: i64 },
+    /// In a terminal, the issue is rendered for reading: a '#<id> <title>
+    /// [<status>]' header followed by the body formatted as markdown
+    /// (headers, bold, bullets, code blocks), wrapped to the terminal
+    /// width. When stdout is piped or redirected, when NO_COLOR is set, or
+    /// when --plain is given, output is the canonical serialization
+    /// instead: a '---'-delimited front-matter block (id, title, status,
+    /// parent when set) followed by the raw markdown body, byte-stable for
+    /// scripts. The canonical form is the same format 'edit' checks out
+    /// into $EDITOR. For a windowed, line-numbered view of a large body,
+    /// use 'read' instead.
+    #[command(after_long_help = "Examples:\n  issues show 42\n  issues show 42 --plain   # canonical serialization even in a terminal")]
+    Show {
+        id: i64,
+        /// Print the canonical serialization even in a terminal
+        #[arg(long)]
+        plain: bool,
+    },
 
     /// Windowed, line-numbered read of an issue's body
     ///
@@ -337,6 +347,17 @@ fn resolve_body(arg: Option<&str>) -> Result<String> {
     }
 }
 
+/// Whether `show` uses the rendered view: --plain and NO_COLOR force the
+/// canonical serialization; otherwise render iff stdout is a TTY
+/// (`ISSUES_ASSUME_TTY=1` counts as one — test hook).
+fn show_rendered(plain: bool) -> bool {
+    if plain || std::env::var("NO_COLOR").is_ok_and(|v| !v.is_empty()) {
+        return false;
+    }
+    std::env::var("ISSUES_ASSUME_TTY").as_deref() == Ok("1")
+        || std::io::stdout().is_terminal()
+}
+
 fn fmt_parent(p: Option<i64>) -> String {
     p.map(|v| format!("#{v}")).unwrap_or_else(|| "none".to_string())
 }
@@ -391,14 +412,18 @@ fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
 
-        Cmd::Show { id } => {
+        Cmd::Show { id, plain } => {
             let (_, conn) = open_project()?;
             let issue = db::get_issue(&conn, id)?;
-            let text = checkout::render(&issue, false);
-            if text.ends_with('\n') {
-                print!("{text}");
+            if show_rendered(plain) {
+                output::print_rendered(&issue);
             } else {
-                println!("{text}");
+                let text = checkout::render(&issue, false);
+                if text.ends_with('\n') {
+                    print!("{text}");
+                } else {
+                    println!("{text}");
+                }
             }
             Ok(())
         }
@@ -423,6 +448,7 @@ fn run(cli: Cli) -> Result<()> {
         }
 
         Cmd::Add { title, status, parent, body, edit: edit_flag } => {
+            checkout::validate_title(&title).map_err(|m| anyhow!(m))?;
             if edit_flag {
                 require_tty(
                     "issues add --edit",
@@ -447,6 +473,9 @@ fn run(cli: Cli) -> Result<()> {
         }
 
         Cmd::Update { id, status, title, parent } => {
+            if let Some(t) = title.as_deref() {
+                checkout::validate_title(t).map_err(|m| anyhow!(m))?;
+            }
             let (_, mut conn) = open_project()?;
             let parent_change: Option<Option<i64>> = match parent.as_deref() {
                 None => None,

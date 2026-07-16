@@ -3,7 +3,24 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use chrono::{DateTime, Utc};
 use regex::Regex;
 
+use termimad::MadSkin;
+use termimad::crossterm::style::Stylize as _;
+
 use crate::model::Issue;
+
+/// Human-readable `show` view: grep-style header, then the body rendered
+/// as terminal markdown. Shows exactly the same information as the
+/// canonical serialization — no timestamps, no extra fields.
+pub fn print_rendered(issue: &Issue) {
+    println!("#{} {} [{}]", issue.id, issue.title.as_str().bold(), issue.status);
+    if let Some(p) = issue.parent_id {
+        println!("parent: #{p}");
+    }
+    if !issue.body.is_empty() {
+        println!();
+        MadSkin::default().print_text(&issue.body);
+    }
+}
 
 /// Compact relative time: `now`, `5m`, `2h`, `3d`.
 pub fn relative_secs(secs: u64, zero: &str) -> String {

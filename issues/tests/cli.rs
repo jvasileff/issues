@@ -19,6 +19,7 @@ fn cmd(dir: &Path) -> Command {
     c.env_remove("EDITOR");
     c.env_remove("ISSUES_ASSUME_TTY");
     c.env_remove("ISSUES_CRASH_BEFORE_COMMIT");
+    c.env_remove("NO_COLOR");
     c
 }
 
@@ -97,10 +98,10 @@ fn init_add_list_show_roundtrip() {
     let only_done = stdout_of(t.path(), &["list", "--status", "done"]);
     assert!(!only_done.contains("Open idea") && only_done.contains("Finished work"));
 
-    assert_eq!(show(t.path(), a), format!("---\nid: {a}\ntitle: Open idea\nstatus: idea\n---\n"));
+    assert_eq!(show(t.path(), a), format!("---\nid: {a}\ntitle: \"Open idea\"\nstatus: idea\n---\n"));
     assert_eq!(
         show(t.path(), b),
-        format!("---\nid: {b}\ntitle: Finished work\nstatus: done\n---\nwas done\n")
+        format!("---\nid: {b}\ntitle: \"Finished work\"\nstatus: done\n---\nwas done\n")
     );
 }
 
@@ -202,7 +203,7 @@ fn parent_child() {
         .stdout(predicate::str::contains(format!("parent: #{parent} → none")));
     let list = stdout_of(t.path(), &["list"]);
     assert!(!list.contains("(sub of"));
-    assert!(show(t.path(), child).starts_with(&format!("---\nid: {child}\ntitle: Child task\nstatus: idea\n---\n")));
+    assert!(show(t.path(), child).starts_with(&format!("---\nid: {child}\ntitle: \"Child task\"\nstatus: idea\n---\n")));
 
     // bad parent rejected
     cmd(t.path())
@@ -595,4 +596,186 @@ fn tty_guard() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("requires a TTY"));
+}
+
+// ------------------------------------------------- rendered `show` (issue #4)
+
+#[test]
+fn show_plain_is_byte_identical_to_piped_show() {
+    let t = project();
+    let id = add(t.path(), "Plain check", &["--body", "line one\n\n- bullet\n"]);
+    let piped = show(t.path(), id);
+    let plain = stdout_of(t.path(), &["show", &id.to_string(), "--plain"]);
+    assert_eq!(plain, piped);
+}
+
+#[test]
+fn show_renders_under_tty_hook() {
+    let t = project();
+    let id = add(t.path(), "Render me", &["--body", "## Heading\n\nsome **bold** text\n"]);
+    let child_id = add(t.path(), "Child render", &["--parent", &id.to_string()]);
+    let out = cmd(t.path())
+        .env("ISSUES_ASSUME_TTY", "1")
+        .args(["show", &id.to_string()])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let s = String::from_utf8(out.stdout).unwrap();
+    assert!(s.contains("\x1b["), "expected ANSI escapes in rendered view: {s:?}");
+    assert!(s.contains(&format!("#{id}")));
+    assert!(!s.contains("---"), "rendered view must not contain front-matter delimiters: {s:?}");
+
+    // a child issue's rendered header includes its parent
+    let child = String::from_utf8(
+        cmd(t.path())
+            .env("ISSUES_ASSUME_TTY", "1")
+            .args(["show", &child_id.to_string()])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    assert!(child.contains(&format!("parent: #{id}")));
+}
+
+#[test]
+fn show_no_color_wins_over_tty_hook() {
+    let t = project();
+    let id = add(t.path(), "No color", &["--body", "**bold** body\n"]);
+    let canonical = show(t.path(), id);
+    let out = cmd(t.path())
+        .env("ISSUES_ASSUME_TTY", "1")
+        .env("NO_COLOR", "1")
+        .args(["show", &id.to_string()])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    assert_eq!(String::from_utf8(out.stdout).unwrap(), canonical);
+}
+
+#[test]
+fn show_plain_preserves_markdown_body_bytes() {
+    let t = project();
+    let body = "- bullet one\n- **bold** item\n\n```rust\nfn main() {}\n```\n";
+    let out = cmd(t.path())
+        .args(["add", "Markdown body", "--body", "-"])
+        .write_stdin(body)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let id: i64 = String::from_utf8(out.stdout)
+        .unwrap()
+        .trim()
+        .strip_prefix("created #")
+        .unwrap()
+        .parse()
+        .unwrap();
+    let s = stdout_of(t.path(), &["show", &id.to_string(), "--plain"]);
+    let idx = s.find("\n---\n").expect("plain show output has no closing ---");
+    assert_eq!(&s[idx + 5..], body);
+}
+
+// ------------------------------------------- YAML-quoted titles (issue #8)
+
+#[test]
+fn title_is_yaml_quoted_in_canonical_output() {
+    let t = project();
+    let id = add(t.path(), "Formatted output: with a colon", &["--body", "b\n"]);
+    // exact bytes: the title is a YAML double-quoted scalar, so the whole
+    // front-matter block is valid YAML even with ': ' in the title
+    assert_eq!(
+        show(t.path(), id),
+        format!("---\nid: {id}\ntitle: \"Formatted output: with a colon\"\nstatus: idea\n---\nb\n")
+    );
+}
+
+#[test]
+fn quoted_title_round_trips_through_edit() {
+    let t = project();
+    let title = r#"weird "quoted" \ title: yes"#;
+    let id = add(t.path(), title, &["--body", "body\n"]);
+    let s = show(t.path(), id);
+    assert!(s.contains(r#"title: "weird \"quoted\" \\ title: yes""#), "{s}");
+    // the edit flow parses the escaped title back; editor only touches the body
+    let ed = write_editor(t.path(), "ed.sh", r#"sed -i 's/^body$/edited/' "$1""#);
+    cmd(t.path())
+        .args(["edit", &id.to_string()])
+        .env("ISSUES_ASSUME_TTY", "1")
+        .env("EDITOR", &ed)
+        .assert()
+        .success();
+    assert_eq!(body_of(t.path(), id), "edited\n");
+    let list = stdout_of(t.path(), &["list"]);
+    assert!(list.contains(title), "title must survive an edit round-trip: {list}");
+}
+
+#[test]
+fn bare_title_still_accepted_on_parse() {
+    let t = project();
+    let id = add(t.path(), "Old style", &["--body", "b\n"]);
+    let ed = write_editor(t.path(), "ed.sh", r#"sed -i 's/^title: .*$/title: Renamed bare/' "$1""#);
+    cmd(t.path())
+        .args(["edit", &id.to_string()])
+        .env("ISSUES_ASSUME_TTY", "1")
+        .env("EDITOR", &ed)
+        .assert()
+        .success();
+    assert!(stdout_of(t.path(), &["list"]).contains("Renamed bare"));
+}
+
+#[test]
+fn malformed_quoted_title_reopens_editor() {
+    let t = project();
+    let id = add(t.path(), "Fix quotes", &["--body", "body\n"]);
+    let state = t.path().join("state");
+    let cap = t.path().join("cap.txt");
+    let ed = write_editor(
+        t.path(),
+        "ed.sh",
+        &format!(
+            r#"if [ -f "{state}" ]; then
+  cp "$1" "{cap}"
+  sed -i 's/^title: .*$/title: "Fixed title"/' "$1"
+else
+  touch "{state}"
+  sed -i 's/^title: .*$/title: "unterminated/' "$1"
+fi"#,
+            state = state.display(),
+            cap = cap.display()
+        ),
+    );
+    cmd(t.path())
+        .args(["edit", &id.to_string()])
+        .env("ISSUES_ASSUME_TTY", "1")
+        .env("EDITOR", &ed)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(format!("#{id} saved")));
+    let captured = fs::read_to_string(&cap).unwrap();
+    assert!(captured.starts_with("# ERROR: unterminated quoted title on line 3"), "{captured}");
+    assert!(stdout_of(t.path(), &["list"]).contains("Fixed title"));
+}
+
+#[test]
+fn multiline_and_empty_titles_rejected() {
+    let t = project();
+    cmd(t.path())
+        .args(["add", "two\nlines"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("single line"));
+    cmd(t.path())
+        .args(["add", "   "])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("empty"));
+    let id = add(t.path(), "fine", &[]);
+    cmd(t.path())
+        .args(["update", &id.to_string(), "--title", "cr\rhere"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("single line"));
+    // db untouched by any of the rejects
+    let list = stdout_of(t.path(), &["list"]);
+    assert!(list.contains("fine") && !list.contains("lines") && !list.contains("cr"));
 }
