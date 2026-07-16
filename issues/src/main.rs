@@ -256,7 +256,7 @@ enum Cmd {
     ///
     /// Checks the issue out to .issues/drafts/<id>.md as front-matter (id,
     /// title, status, parent) plus markdown body, and opens $VISUAL /
-    /// $EDITOR / vi on it ('EDITOR=\"code --wait\"' works). Save and close
+    /// $EDITOR / vi on it (EDITOR="code --wait" works). Save and close
     /// to write back; close without changes to abort.
     ///
     /// The draft is durable: your edited bytes are never deleted until the
