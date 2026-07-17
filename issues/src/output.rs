@@ -3,23 +3,46 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use chrono::{DateTime, Utc};
 use regex::Regex;
 
-use termimad::MadSkin;
-use termimad::crossterm::style::Stylize as _;
+use termimad::{CompoundStyle, MadSkin, StyledChar};
+use termimad::crossterm::style::{Attribute, Color, Stylize as _};
 
 use crate::model::Issue;
+
+/// Terminal markdown skin, styled after Claude Code's own renderer:
+/// headings bold (H1 also italic + underline), no background patches
+/// anywhere, inline code in an indigo accent, fenced code left plain,
+/// `-` bullets, dim `>` quote marks. Readable on dark and light terminals.
+fn skin() -> MadSkin {
+    let mut skin = MadSkin::no_style();
+    skin.bold = CompoundStyle::with_attr(Attribute::Bold);
+    skin.italic = CompoundStyle::with_attr(Attribute::Italic);
+    skin.strikeout = CompoundStyle::with_attr(Attribute::CrossedOut);
+    skin.inline_code = CompoundStyle::with_fg(Color::Rgb { r: 87, g: 105, b: 247 });
+    for h in &mut skin.headers {
+        h.add_attr(Attribute::Bold);
+    }
+    skin.headers[0].add_attr(Attribute::Italic);
+    skin.headers[0].add_attr(Attribute::Underlined);
+    skin.bullet = StyledChar::nude('-');
+    skin.quote_mark = StyledChar::new(CompoundStyle::with_attr(Attribute::Dim), '>');
+    skin.horizontal_rule = StyledChar::new(CompoundStyle::with_attr(Attribute::Dim), '─');
+    skin
+}
 
 /// Human-readable `show` view: grep-style header, then the body rendered
 /// as terminal markdown. Shows exactly the same information as the
 /// canonical serialization — no timestamps, no extra fields.
-pub fn print_rendered(issue: &Issue) {
-    println!("#{} {} [{}]", issue.id, issue.title.as_str().bold(), issue.status);
+pub fn render_show(issue: &Issue) -> String {
+    let mut out =
+        format!("#{} {} [{}]\n", issue.id, issue.title.as_str().bold(), issue.status);
     if let Some(p) = issue.parent_id {
-        println!("parent: #{p}");
+        out.push_str(&format!("parent: #{p}\n"));
     }
     if !issue.body.is_empty() {
-        println!();
-        MadSkin::default().print_text(&issue.body);
+        out.push('\n');
+        out.push_str(&skin().term_text(&issue.body).to_string());
     }
+    out
 }
 
 /// Compact relative time: `now`, `5m`, `2h`, `3d`.

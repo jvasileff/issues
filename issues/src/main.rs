@@ -358,6 +358,44 @@ fn show_rendered(plain: bool) -> bool {
         || std::io::stdout().is_terminal()
 }
 
+/// Print `text` through a pager (git-style) when stdout is a real TTY,
+/// directly otherwise. Respects $PAGER (run via the shell, so it may carry
+/// arguments; set-but-empty disables paging); defaults to `less -RFX` so
+/// output shorter than one screen prints exactly as an unpaged run would.
+/// Falls back to direct printing if the pager can't be spawned.
+fn page_or_print(text: &str) {
+    if !std::io::stdout().is_terminal() {
+        print!("{text}");
+        return;
+    }
+    let mut cmd = match std::env::var("PAGER") {
+        Ok(p) if p.is_empty() => {
+            print!("{text}");
+            return;
+        }
+        Ok(p) => {
+            let mut c = std::process::Command::new("sh");
+            c.args(["-c", &p]);
+            c
+        }
+        Err(_) => {
+            let mut c = std::process::Command::new("less");
+            c.args(["-R", "-F", "-X"]);
+            c
+        }
+    };
+    match cmd.stdin(std::process::Stdio::piped()).spawn() {
+        Ok(mut child) => {
+            if let Some(mut stdin) = child.stdin.take() {
+                // ignore EPIPE: the user may quit the pager before EOF
+                let _ = stdin.write_all(text.as_bytes());
+            }
+            let _ = child.wait();
+        }
+        Err(_) => print!("{text}"),
+    }
+}
+
 fn fmt_parent(p: Option<i64>) -> String {
     p.map(|v| format!("#{v}")).unwrap_or_else(|| "none".to_string())
 }
@@ -416,7 +454,7 @@ fn run(cli: Cli) -> Result<()> {
             let (_, conn) = open_project()?;
             let issue = db::get_issue(&conn, id)?;
             if show_rendered(plain) {
-                output::print_rendered(&issue);
+                page_or_print(&output::render_show(&issue));
             } else {
                 let text = checkout::render(&issue, false);
                 if text.ends_with('\n') {
