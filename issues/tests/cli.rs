@@ -816,6 +816,31 @@ fn show_plain_preserves_markdown_body_bytes() {
     assert_eq!(&s[idx + 5..], body);
 }
 
+// -------------------------------------------------- leading '#' in id args
+
+#[test]
+fn ids_accept_leading_hash() {
+    let t = project();
+    let id = add(t.path(), "Hash id", &["--body", "b\n"]);
+    let hashed = format!("#{id}");
+    assert_eq!(
+        stdout_of(t.path(), &["show", &hashed]),
+        stdout_of(t.path(), &["show", &id.to_string()])
+    );
+    cmd(t.path())
+        .args(["update", &hashed, "--status", "agreed"])
+        .assert()
+        .success();
+    let child = add(t.path(), "Hash child", &["--parent", &hashed]);
+    let listed = stdout_of(t.path(), &["list", "--parent", &hashed]);
+    assert!(listed.contains(&format!("#{child}")), "{listed}");
+    cmd(t.path())
+        .args(["show", "#not-a-number"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("invalid issue id '#not-a-number'"));
+}
+
 // ------------------------------------------- YAML-quoted titles (issue #8)
 
 #[test]

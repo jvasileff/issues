@@ -80,6 +80,14 @@ fn parse_status(s: &str) -> Result<Status, String> {
     Status::from_str(s)
 }
 
+/// Issue id, tolerating a copy-pasted leading '#' ("#12" -> 12).
+fn parse_id(s: &str) -> Result<i64, String> {
+    s.strip_prefix('#')
+        .unwrap_or(s)
+        .parse()
+        .map_err(|_| format!("invalid issue id '{s}'"))
+}
+
 #[derive(Subcommand)]
 enum Cmd {
     /// Create .issues/ in the current directory (database, drafts/, .gitignore)
@@ -114,7 +122,7 @@ enum Cmd {
         #[arg(long, value_parser = parse_status)]
         status: Option<Status>,
         /// Show only children of the given issue id
-        #[arg(long, value_name = "ID")]
+        #[arg(long, value_name = "ID", value_parser = parse_id)]
         parent: Option<i64>,
     },
 
@@ -134,6 +142,7 @@ enum Cmd {
         after_long_help = "Examples:\n  issues show 42\n  issues show 42 --plain   # canonical serialization even in a terminal"
     )]
     Show {
+        #[arg(value_parser = parse_id)]
         id: i64,
         /// Print the canonical serialization even in a terminal
         #[arg(long)]
@@ -153,6 +162,7 @@ enum Cmd {
         after_long_help = "Examples:\n  issues read 42\n  issues read 42 --offset 110 --limit 30"
     )]
     Read {
+        #[arg(value_parser = parse_id)]
         id: i64,
         /// 1-based body line to start from
         #[arg(long, default_value_t = 1, value_name = "N")]
@@ -178,7 +188,7 @@ enum Cmd {
         #[arg(long, value_parser = parse_status)]
         status: Option<Status>,
         /// Parent issue id (files this issue as a subtask)
-        #[arg(long, value_name = "ID")]
+        #[arg(long, value_name = "ID", value_parser = parse_id)]
         parent: Option<i64>,
         /// Body text, or '-' to read the markdown body from stdin
         #[arg(long)]
@@ -198,6 +208,7 @@ enum Cmd {
         after_long_help = "Examples:\n  issues update 42 --status in-progress\n  issues update 42 --title \"Fix auth token refresh (v2)\"\n  issues update 42 --parent none"
     )]
     Update {
+        #[arg(value_parser = parse_id)]
         id: i64,
         /// New status (idea|agreed|in-progress|done|abandoned; lenient input)
         #[arg(long, value_parser = parse_status)]
@@ -219,6 +230,7 @@ enum Cmd {
         after_long_help = "Examples:\n  issues set-body 42 --body \"short note\"\n  issues set-body 42 --body -   # body from stdin"
     )]
     SetBody {
+        #[arg(value_parser = parse_id)]
         id: i64,
         /// New body text, or '-' to read the markdown body from stdin
         #[arg(long)]
@@ -238,6 +250,7 @@ enum Cmd {
         after_long_help = "Examples:\n  issues str-replace 42 --old \"returns 401\" --new \"returns 403\"\n  issues str-replace 42 --old \"- stale item\n\" --new \"\"   # delete a line"
     )]
     StrReplace {
+        #[arg(value_parser = parse_id)]
         id: i64,
         /// Exact text to replace (must occur exactly once in the body)
         #[arg(long)]
@@ -300,7 +313,10 @@ enum Cmd {
     /// Requires a TTY. Scripts and Claude must use the scriptable commands
     /// (update, set-body, str-replace) instead.
     #[command(after_long_help = "Example:\n  issues edit 42")]
-    Edit { id: i64 },
+    Edit {
+        #[arg(value_parser = parse_id)]
+        id: i64,
+    },
 
     /// List or manage unsaved edit drafts
     ///
@@ -314,13 +330,13 @@ enum Cmd {
     )]
     Drafts {
         /// Re-enter the edit flow starting from the draft for this issue
-        #[arg(long, value_name = "ID")]
+        #[arg(long, value_name = "ID", value_parser = parse_id)]
         resume: Option<i64>,
         /// Print a unified diff between the draft and the current db state
-        #[arg(long, value_name = "ID")]
+        #[arg(long, value_name = "ID", value_parser = parse_id)]
         diff: Option<i64>,
         /// Delete the draft for this issue (asks for confirmation)
-        #[arg(long, value_name = "ID")]
+        #[arg(long, value_name = "ID", value_parser = parse_id)]
         discard: Option<i64>,
     },
 }
@@ -561,7 +577,7 @@ fn run(cli: Cli) -> Result<()> {
                 None => None,
                 Some(s) if s.eq_ignore_ascii_case("none") => Some(None),
                 Some(s) => {
-                    Some(Some(s.parse::<i64>().map_err(|_| {
+                    Some(Some(parse_id(s).map_err(|_| {
                         anyhow!("--parent must be an issue id or 'none'")
                     })?))
                 }
