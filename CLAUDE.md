@@ -1,5 +1,5 @@
 ## Building (Claude)
-This checkout is shared with the human's macOS host. Always build/run with `CARGO_TARGET_DIR=target/linux` (binary: `issues/target/linux/debug/issues`). Never write to `issues/target/debug` or `issues/target/release` — those are the Mac's builds, and overwriting them causes cross-platform "exec format error" breakage.
+This checkout is shared with the human's macOS host. The repo is a Cargo virtual workspace (root Cargo.toml; the crate lives in issues/), so cargo commands run from the repo root and target/ lives at the root. Always build/run with `CARGO_TARGET_DIR=target/linux` (binary: `target/linux/debug/issues`). Never write to `target/debug` or `target/release` - those are the Mac's builds, and overwriting them causes cross-platform "exec format error" breakage.
 
 ## Issue tracker
 This project tracks plans/bugs/todos in a local db via the `issues` CLI (not markdown files, not GitHub).
