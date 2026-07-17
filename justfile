@@ -17,8 +17,9 @@ release:
 test:
     cargo test
 
-# clippy, warnings fail the gate
+# rustfmt check + clippy, warnings fail the gate
 lint:
+    cargo fmt --check
     cargo clippy -- -D warnings
 
 # install the issues CLI
