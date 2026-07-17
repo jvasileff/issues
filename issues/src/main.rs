@@ -191,7 +191,7 @@ enum Cmd {
         #[arg(long, value_name = "ID", value_parser = parse_id)]
         parent: Option<i64>,
         /// Body text, or '-' to read the markdown body from stdin
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         body: Option<String>,
         /// Open the new issue in $EDITOR immediately (interactive)
         #[arg(short = 'e', long)]
@@ -233,7 +233,7 @@ enum Cmd {
         #[arg(value_parser = parse_id)]
         id: i64,
         /// New body text, or '-' to read the markdown body from stdin
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         body: String,
     },
 
@@ -253,10 +253,10 @@ enum Cmd {
         #[arg(value_parser = parse_id)]
         id: i64,
         /// Exact text to replace (must occur exactly once in the body)
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         old: String,
         /// Replacement text (may be empty, deleting the matched text)
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         new: String,
     },
 

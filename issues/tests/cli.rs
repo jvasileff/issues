@@ -841,6 +841,39 @@ fn ids_accept_leading_hash() {
         .stderr(predicate::str::contains("invalid issue id '#not-a-number'"));
 }
 
+// ------------------------------------------- hyphen-leading option values
+
+#[test]
+fn hyphen_leading_values_accepted() {
+    let t = project();
+    let id = add(t.path(), "Hyphen values", &["--body", "- old bullet\n"]);
+    assert_eq!(body_of(t.path(), id), "- old bullet\n");
+    cmd(t.path())
+        .args([
+            "str-replace",
+            &id.to_string(),
+            "--old",
+            "- old bullet",
+            "--new",
+            "- new bullet",
+        ])
+        .assert()
+        .success();
+    assert_eq!(body_of(t.path(), id), "- new bullet\n");
+    cmd(t.path())
+        .args(["set-body", &id.to_string(), "--body", "- replaced\n"])
+        .assert()
+        .success();
+    assert_eq!(body_of(t.path(), id), "- replaced\n");
+    // '-' still means "read from stdin"
+    cmd(t.path())
+        .args(["set-body", &id.to_string(), "--body", "-"])
+        .write_stdin("- from stdin\n")
+        .assert()
+        .success();
+    assert_eq!(body_of(t.path(), id), "- from stdin\n");
+}
+
 // ------------------------------------------- YAML-quoted titles (issue #8)
 
 #[test]
