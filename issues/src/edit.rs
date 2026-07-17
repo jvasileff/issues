@@ -85,7 +85,12 @@ struct LoopCtx {
 
 /// §8.3–§8.7: parse / retry / lock-check / merge / commit, until the edit
 /// lands, the user aborts, or there was nothing to save.
-fn run_loop(conn: &mut Connection, root: &Path, paths: &DraftPaths, mut ctx: LoopCtx) -> Result<()> {
+fn run_loop(
+    conn: &mut Connection,
+    root: &Path,
+    paths: &DraftPaths,
+    mut ctx: LoopCtx,
+) -> Result<()> {
     loop {
         let raw = fs::read_to_string(&paths.draft)
             .with_context(|| format!("cannot read draft {}", paths.display()))?;
@@ -103,7 +108,10 @@ fn run_loop(conn: &mut Connection, root: &Path, paths: &DraftPaths, mut ctx: Loo
             }
             // Editor relaunch (parse error / conflict) closed without
             // further changes: abort, keeping the draft.
-            eprintln!("aborted; draft kept at {} (see 'issues drafts')", paths.display());
+            eprintln!(
+                "aborted; draft kept at {} (see 'issues drafts')",
+                paths.display()
+            );
             process::exit(1);
         }
 
@@ -140,7 +148,15 @@ fn run_loop(conn: &mut Connection, root: &Path, paths: &DraftPaths, mut ctx: Loo
             }
         }
 
-        match db::commit_edit(conn, paths.id, &title, status, parent, &parsed.body, &ctx.base_token)? {
+        match db::commit_edit(
+            conn,
+            paths.id,
+            &title,
+            status,
+            parent,
+            &parsed.body,
+            &ctx.base_token,
+        )? {
             db::EditCommit::Committed => {
                 // Only now — after the transaction committed — may the
                 // draft trio go away (§3).
@@ -151,7 +167,13 @@ fn run_loop(conn: &mut Connection, root: &Path, paths: &DraftPaths, mut ctx: Loo
             db::EditCommit::Stale => {
                 let fresh = db::get_issue(conn, paths.id)?;
                 let theirs_text = checkout::render(&fresh, true);
-                match merge::merge_file(&paths.dir, paths.id, &ctx.base_text, &stripped, &theirs_text)? {
+                match merge::merge_file(
+                    &paths.dir,
+                    paths.id,
+                    &ctx.base_text,
+                    &stripped,
+                    &theirs_text,
+                )? {
                     merge::MergeOutcome::Clean(merged) => {
                         fs::write(&paths.draft, &merged)?;
                         paths.write_base(&theirs_text, &fresh.updated_at)?;
@@ -203,7 +225,9 @@ fn resume(conn: &mut Connection, root: &Path, paths: &DraftPaths) -> Result<()> 
     loop {
         print!("[r]esume draft / [d]iff / [x] discard and start fresh / [q]uit? ");
         io::stdout().flush()?;
-        let Some(answer) = read_line()? else { return Ok(()) };
+        let Some(answer) = read_line()? else {
+            return Ok(());
+        };
         match answer.trim().to_ascii_lowercase().as_str() {
             "r" => {
                 let (base_text, base_token) = match paths.read_base() {
@@ -225,7 +249,11 @@ fn resume(conn: &mut Connection, root: &Path, paths: &DraftPaths) -> Result<()> 
                     conn,
                     root,
                     paths,
-                    LoopCtx { prev_text: base_text.clone(), base_text, base_token },
+                    LoopCtx {
+                        prev_text: base_text.clone(),
+                        base_text,
+                        base_token,
+                    },
                 );
             }
             "d" => {
@@ -236,7 +264,9 @@ fn resume(conn: &mut Connection, root: &Path, paths: &DraftPaths) -> Result<()> 
             "x" => {
                 print!("discard draft for #{} and start fresh? [y/N] ", paths.id);
                 io::stdout().flush()?;
-                let Some(confirm) = read_line()? else { return Ok(()) };
+                let Some(confirm) = read_line()? else {
+                    return Ok(());
+                };
                 if matches!(confirm.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
                     paths.delete()?;
                     return fresh_checkout(conn, root, paths);

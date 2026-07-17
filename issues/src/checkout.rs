@@ -57,7 +57,9 @@ pub fn unquote_title(val: &str) -> Result<String, String> {
                 return if extra.is_empty() {
                     Ok(out)
                 } else {
-                    Err(format!("unexpected text after closing title quote: '{extra}'"))
+                    Err(format!(
+                        "unexpected text after closing title quote: '{extra}'"
+                    ))
                 };
             }
             Some('\\') => match chars.next() {
@@ -70,8 +72,7 @@ pub fn unquote_title(val: &str) -> Result<String, String> {
     }
 }
 
-const TITLE_HINT: &str =
-    r#"Write the title as "..." (escape " and \ with a backslash), or bare; a bare title may not begin with '"'."#;
+const TITLE_HINT: &str = r#"Write the title as "..." (escape " and \ with a backslash), or bare; a bare title may not begin with '"'."#;
 
 /// Serialize an issue in the canonical checkout format (§8.2): a strict,
 /// hand-parsed front-matter block followed by the body verbatim.
@@ -135,7 +136,11 @@ pub fn parse(text: &str) -> Result<Parsed, ParseError> {
 
         if lineno == 1 {
             if line != "---" {
-                return Err(err(1, "file must begin with a '---' front-matter line".into(), None));
+                return Err(err(
+                    1,
+                    "file must begin with a '---' front-matter line".into(),
+                    None,
+                ));
             }
         } else if line == "---" {
             parsed.body = text[end..].to_string();
@@ -145,7 +150,11 @@ pub fn parse(text: &str) -> Result<Parsed, ParseError> {
             // blank lines and comments inside the block are ignored
         } else {
             let Some((k, v)) = line.split_once(':') else {
-                return Err(err(lineno, format!("expected 'key: value', got '{line}'"), None));
+                return Err(err(
+                    lineno,
+                    format!("expected 'key: value', got '{line}'"),
+                    None,
+                ));
             };
             let key = k.trim().to_string();
             let val = v.trim();
@@ -195,7 +204,11 @@ pub fn parse(text: &str) -> Result<Parsed, ParseError> {
     }
 
     if lineno == 0 {
-        return Err(err(1, "file is empty; expected a '---' front-matter block".into(), None));
+        return Err(err(
+            1,
+            "file is empty; expected a '---' front-matter block".into(),
+            None,
+        ));
     }
     if !closed {
         return Err(err(lineno, "missing closing '---' line".into(), None));
@@ -216,9 +229,14 @@ mod tests {
 
     #[test]
     fn quote_unquote_round_trip() {
-        for t in
-            ["plain", "colon: title", r#"has "quotes""#, r"back\slash", r#"both \" at once"#, " padded "]
-        {
+        for t in [
+            "plain",
+            "colon: title",
+            r#"has "quotes""#,
+            r"back\slash",
+            r#"both \" at once"#,
+            " padded ",
+        ] {
             assert_eq!(unquote_title(&quote_title(t)).unwrap(), t);
         }
     }

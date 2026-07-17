@@ -96,14 +96,21 @@ pub fn open(root: &Path) -> Result<Connection> {
     if !path.is_file() {
         bail!("no database at {}; run `issues init`", path.display());
     }
-    let conn = Connection::open(&path).with_context(|| format!("cannot open {}", path.display()))?;
+    let conn =
+        Connection::open(&path).with_context(|| format!("cannot open {}", path.display()))?;
     configure(&conn)?;
     let ver: String = conn
-        .query_row("SELECT value FROM meta WHERE key='schema_version'", [], |r| r.get(0))
+        .query_row(
+            "SELECT value FROM meta WHERE key='schema_version'",
+            [],
+            |r| r.get(0),
+        )
         .context("database has no schema_version; not an issues database?")?;
     let ver_num: i64 = ver.parse().unwrap_or(i64::MAX);
     if ver_num > SCHEMA_VERSION {
-        bail!("database schema version {ver} is newer than this binary supports ({SCHEMA_VERSION}); upgrade `issues`");
+        bail!(
+            "database schema version {ver} is newer than this binary supports ({SCHEMA_VERSION}); upgrade `issues`"
+        );
     }
     Ok(conn)
 }
@@ -123,9 +130,13 @@ fn issue_from_row(row: &Row) -> rusqlite::Result<Issue> {
 }
 
 pub fn get_issue(conn: &Connection, id: i64) -> Result<Issue> {
-    conn.query_row(&format!("SELECT {COLS} FROM issues WHERE id=?1"), [id], issue_from_row)
-        .optional()?
-        .ok_or_else(|| anyhow!("issue #{id} not found"))
+    conn.query_row(
+        &format!("SELECT {COLS} FROM issues WHERE id=?1"),
+        [id],
+        issue_from_row,
+    )
+    .optional()?
+    .ok_or_else(|| anyhow!("issue #{id} not found"))
 }
 
 pub fn issue_exists(conn: &Connection, id: i64) -> Result<bool> {
@@ -165,7 +176,11 @@ where
 {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let mut issue = tx
-        .query_row(&format!("SELECT {COLS} FROM issues WHERE id=?1"), [id], issue_from_row)
+        .query_row(
+            &format!("SELECT {COLS} FROM issues WHERE id=?1"),
+            [id],
+            issue_from_row,
+        )
         .optional()?
         .ok_or_else(|| anyhow!("issue #{id} not found"))?;
     let prev = issue.updated_at.clone();
@@ -173,7 +188,14 @@ where
     issue.updated_at = next_ts(&prev);
     tx.execute(
         "UPDATE issues SET title=?1, status=?2, body=?3, parent_id=?4, updated_at=?5 WHERE id=?6",
-        params![issue.title, issue.status.as_str(), issue.body, issue.parent_id, issue.updated_at, id],
+        params![
+            issue.title,
+            issue.status.as_str(),
+            issue.body,
+            issue.parent_id,
+            issue.updated_at,
+            id
+        ],
     )?;
     tx.commit()?;
     Ok(issue)
@@ -203,9 +225,13 @@ pub fn commit_edit(
     }
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let cur: Option<String> = tx
-        .query_row("SELECT updated_at FROM issues WHERE id=?1", [id], |r| r.get(0))
+        .query_row("SELECT updated_at FROM issues WHERE id=?1", [id], |r| {
+            r.get(0)
+        })
         .optional()?;
-    let Some(cur) = cur else { bail!("issue #{id} not found") };
+    let Some(cur) = cur else {
+        bail!("issue #{id} not found")
+    };
     if cur != base_token {
         return Ok(EditCommit::Stale);
     }

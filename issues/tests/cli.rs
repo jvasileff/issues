@@ -31,7 +31,11 @@ fn project() -> TempDir {
 
 fn add(dir: &Path, title: &str, args: &[&str]) -> i64 {
     let out = cmd(dir).arg("add").arg(title).args(args).output().unwrap();
-    assert!(out.status.success(), "add failed: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "add failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     String::from_utf8(out.stdout)
         .unwrap()
         .trim()
@@ -43,7 +47,11 @@ fn add(dir: &Path, title: &str, args: &[&str]) -> i64 {
 
 fn stdout_of(dir: &Path, args: &[&str]) -> String {
     let out = cmd(dir).args(args).output().unwrap();
-    assert!(out.status.success(), "{args:?} failed: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     String::from_utf8(out.stdout).unwrap()
 }
 
@@ -81,16 +89,28 @@ fn init_add_list_show_roundtrip() {
         .arg("init")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Add the following to your project's CLAUDE.md"))
+        .stdout(predicate::str::contains(
+            "Add the following to your project's CLAUDE.md",
+        ))
         .stdout(predicate::str::contains("## Issue tracker"));
-    assert_eq!(fs::read_to_string(t.path().join(".issues/.gitignore")).unwrap(), "*\n");
+    assert_eq!(
+        fs::read_to_string(t.path().join(".issues/.gitignore")).unwrap(),
+        "*\n"
+    );
 
     let a = add(t.path(), "Open idea", &[]);
-    let b = add(t.path(), "Finished work", &["--status", "done", "--body", "was done\n"]);
+    let b = add(
+        t.path(),
+        "Finished work",
+        &["--status", "done", "--body", "was done\n"],
+    );
 
     let list = stdout_of(t.path(), &["list"]);
     assert!(list.contains("Open idea"));
-    assert!(!list.contains("Finished work"), "done issues must be hidden by default");
+    assert!(
+        !list.contains("Finished work"),
+        "done issues must be hidden by default"
+    );
 
     let all = stdout_of(t.path(), &["list", "--all"]);
     assert!(all.contains("Open idea") && all.contains("Finished work"));
@@ -98,7 +118,10 @@ fn init_add_list_show_roundtrip() {
     let only_done = stdout_of(t.path(), &["list", "--status", "done"]);
     assert!(!only_done.contains("Open idea") && only_done.contains("Finished work"));
 
-    assert_eq!(show(t.path(), a), format!("---\nid: {a}\ntitle: \"Open idea\"\nstatus: idea\n---\n"));
+    assert_eq!(
+        show(t.path(), a),
+        format!("---\nid: {a}\ntitle: \"Open idea\"\nstatus: idea\n---\n")
+    );
     assert_eq!(
         show(t.path(), b),
         format!("---\nid: {b}\ntitle: \"Finished work\"\nstatus: done\n---\nwas done\n")
@@ -108,7 +131,11 @@ fn init_add_list_show_roundtrip() {
 #[test]
 fn list_empty_messages() {
     let t = project();
-    cmd(t.path()).arg("list").assert().success().stdout(predicate::str::contains("no open issues"));
+    cmd(t.path())
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no open issues"));
     add(t.path(), "x", &[]);
     cmd(t.path())
         .args(["list", "--status", "done"])
@@ -131,7 +158,13 @@ fn stdin_bodies() {
         .output()
         .unwrap();
     assert!(out.status.success());
-    let id2: i64 = String::from_utf8(out.stdout).unwrap().trim().strip_prefix("created #").unwrap().parse().unwrap();
+    let id2: i64 = String::from_utf8(out.stdout)
+        .unwrap()
+        .trim()
+        .strip_prefix("created #")
+        .unwrap()
+        .parse()
+        .unwrap();
     assert_eq!(body_of(t.path(), id2), "line one\nline two\n");
 
     cmd(t.path())
@@ -167,7 +200,9 @@ fn lenient_status_parsing() {
         .args(["update", &id.to_string(), "--status", "bogus"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("idea, agreed, in-progress, done, abandoned"));
+        .stderr(predicate::str::contains(
+            "idea, agreed, in-progress, done, abandoned",
+        ));
 }
 
 // ---------------------------------------------------------------- §13.4
@@ -181,15 +216,30 @@ fn parent_child() {
     // parent displayed -> child indented beneath it
     let list = stdout_of(t.path(), &["list"]);
     let lines: Vec<&str> = list.lines().collect();
-    let p_line = lines.iter().position(|l| l.contains("Parent plan")).unwrap();
-    let c_line = lines.iter().position(|l| l.contains("  Child task")).unwrap();
-    assert!(c_line == p_line + 1, "child must render indented right beneath its parent:\n{list}");
+    let p_line = lines
+        .iter()
+        .position(|l| l.contains("Parent plan"))
+        .unwrap();
+    let c_line = lines
+        .iter()
+        .position(|l| l.contains("  Child task"))
+        .unwrap();
+    assert!(
+        c_line == p_line + 1,
+        "child must render indented right beneath its parent:\n{list}"
+    );
     assert!(!list.contains("(sub of"));
 
     // parent hidden (done) -> child flat with suffix
-    cmd(t.path()).args(["update", &parent.to_string(), "--status", "done"]).assert().success();
+    cmd(t.path())
+        .args(["update", &parent.to_string(), "--status", "done"])
+        .assert()
+        .success();
     let list = stdout_of(t.path(), &["list"]);
-    assert!(list.contains(&format!("Child task (sub of #{parent})")), "{list}");
+    assert!(
+        list.contains(&format!("Child task (sub of #{parent})")),
+        "{list}"
+    );
 
     // --parent filter
     let filtered = stdout_of(t.path(), &["list", "--parent", &parent.to_string()]);
@@ -200,10 +250,14 @@ fn parent_child() {
         .args(["update", &child.to_string(), "--parent", "none"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(format!("parent: #{parent} → none")));
+        .stdout(predicate::str::contains(format!(
+            "parent: #{parent} → none"
+        )));
     let list = stdout_of(t.path(), &["list"]);
     assert!(!list.contains("(sub of"));
-    assert!(show(t.path(), child).starts_with(&format!("---\nid: {child}\ntitle: \"Child task\"\nstatus: idea\n---\n")));
+    assert!(show(t.path(), child).starts_with(&format!(
+        "---\nid: {child}\ntitle: \"Child task\"\nstatus: idea\n---\n"
+    )));
 
     // bad parent rejected
     cmd(t.path())
@@ -264,8 +318,16 @@ fn str_replace() {
 #[test]
 fn grep() {
     let t = project();
-    let a = add(t.path(), "Auth refresh", &["--body", "alpha one\nbeta two\ngamma three\n"]);
-    let b = add(t.path(), "Done thing", &["--status", "done", "--body", "beta in a done issue\n"]);
+    let a = add(
+        t.path(),
+        "Auth refresh",
+        &["--body", "alpha one\nbeta two\ngamma three\n"],
+    );
+    let b = add(
+        t.path(),
+        "Done thing",
+        &["--status", "done", "--body", "beta in a done issue\n"],
+    );
 
     // body match with correct 1-based line number, grouped format
     let out = stdout_of(t.path(), &["grep", "beta"]);
@@ -273,14 +335,23 @@ fn grep() {
 
     // title match
     let out = stdout_of(t.path(), &["grep", "refresh"]);
-    assert!(out.contains(&format!("#{a} Auth refresh [idea]\n  title: Auth refresh\n")));
+    assert!(out.contains(&format!(
+        "#{a} Auth refresh [idea]\n  title: Auth refresh\n"
+    )));
 
     // context lines use '-' separator
     let out = stdout_of(t.path(), &["grep", "beta", "-C", "1"]);
-    assert!(out.contains("  1- alpha one\n  2: beta two\n  3- gamma three\n"), "{out}");
+    assert!(
+        out.contains("  1- alpha one\n  2: beta two\n  3- gamma three\n"),
+        "{out}"
+    );
 
     // case-insensitive
-    cmd(t.path()).args(["grep", "BETA"]).assert().success().stdout(predicate::str::contains("no matches"));
+    cmd(t.path())
+        .args(["grep", "BETA"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("no matches"));
     let out = stdout_of(t.path(), &["grep", "-i", "BETA"]);
     assert!(out.contains("beta two"));
 
@@ -331,7 +402,11 @@ fn read_windowing() {
 #[test]
 fn edit_clean_save() {
     let t = project();
-    let id = add(t.path(), "Edit me", &["--body", "first line\nsecond line\n"]);
+    let id = add(
+        t.path(),
+        "Edit me",
+        &["--body", "first line\nsecond line\n"],
+    );
     let ed = write_editor(
         t.path(),
         "ed.sh",
@@ -344,12 +419,27 @@ sed -i 's/^status: idea$/status: agreed/' "$1""#,
         .env("EDITOR", &ed)
         .assert()
         .success()
-        .stdout(predicate::str::contains(format!("#{id} saved (status: agreed)")));
+        .stdout(predicate::str::contains(format!(
+            "#{id} saved (status: agreed)"
+        )));
     let s = show(t.path(), id);
     assert!(s.contains("status: agreed\n") && s.contains("edited line\n"));
-    assert!(!draft_path(t.path(), id).exists(), "draft trio must be gone after commit");
-    assert!(!t.path().join(".issues/drafts").join(format!("{id}.base.md")).exists());
-    assert!(!t.path().join(".issues/drafts").join(format!("{id}.meta")).exists());
+    assert!(
+        !draft_path(t.path(), id).exists(),
+        "draft trio must be gone after commit"
+    );
+    assert!(
+        !t.path()
+            .join(".issues/drafts")
+            .join(format!("{id}.base.md"))
+            .exists()
+    );
+    assert!(
+        !t.path()
+            .join(".issues/drafts")
+            .join(format!("{id}.meta"))
+            .exists()
+    );
 }
 
 #[test]
@@ -395,10 +485,15 @@ fi"#,
         .env("EDITOR", &ed)
         .assert()
         .success()
-        .stdout(predicate::str::contains(format!("#{id} saved (status: done)")));
+        .stdout(predicate::str::contains(format!(
+            "#{id} saved (status: done)"
+        )));
     // second launch saw the ERROR block
     let captured = fs::read_to_string(&cap).unwrap();
-    assert!(captured.starts_with("# ERROR: unknown status 'bogus' on line 4.\n"), "{captured}");
+    assert!(
+        captured.starts_with("# ERROR: unknown status 'bogus' on line 4.\n"),
+        "{captured}"
+    );
     assert!(captured.contains("# Valid: idea, agreed, in-progress, done, abandoned."));
     assert!(show(t.path(), id).contains("status: done\n"));
     assert!(!draft_path(t.path(), id).exists());
@@ -439,7 +534,9 @@ fi"#,
         .arg("list")
         .assert()
         .success()
-        .stdout(predicate::str::contains("note: 1 unsaved draft exists (issues drafts)"));
+        .stdout(predicate::str::contains(
+            "note: 1 unsaved draft exists (issues drafts)",
+        ));
 }
 
 // ---------------------------------------------------------------- §13.9
@@ -465,10 +562,17 @@ sed -i 's/beta/BETA/' "$1""#,
         .env("EDITOR", &ed)
         .assert()
         .success()
-        .stdout(predicate::str::contains("merged concurrent changes automatically"))
-        .stdout(predicate::str::contains(format!("#{id} saved (status: agreed)")));
+        .stdout(predicate::str::contains(
+            "merged concurrent changes automatically",
+        ))
+        .stdout(predicate::str::contains(format!(
+            "#{id} saved (status: agreed)"
+        )));
     let s = show(t.path(), id);
-    assert!(s.contains("status: agreed\n"), "concurrent status change kept: {s}");
+    assert!(
+        s.contains("status: agreed\n"),
+        "concurrent status change kept: {s}"
+    );
     assert!(s.contains("BETA\n"), "editor's body change kept: {s}");
     assert!(!draft_path(t.path(), id).exists());
 }
@@ -505,11 +609,19 @@ fi"#,
         .env("EDITOR", &ed)
         .assert()
         .success()
-        .stdout(predicate::str::contains(format!("#{id} saved (status: agreed)")));
+        .stdout(predicate::str::contains(format!(
+            "#{id} saved (status: agreed)"
+        )));
     let captured = fs::read_to_string(&cap).unwrap();
     assert!(captured.starts_with("# CONFLICT:"), "{captured}");
-    assert!(captured.contains("<<<<<<<") && captured.contains(">>>>>>>"), "{captured}");
-    assert!(captured.contains("our line") && captured.contains("their line"), "{captured}");
+    assert!(
+        captured.contains("<<<<<<<") && captured.contains(">>>>>>>"),
+        "{captured}"
+    );
+    assert!(
+        captured.contains("our line") && captured.contains("their line"),
+        "{captured}"
+    );
     let s = show(t.path(), id);
     assert!(s.contains("status: agreed\n"));
     assert_eq!(body_of(t.path(), id), "resolved line\n");
@@ -522,7 +634,11 @@ fi"#,
 fn crash_leaves_recoverable_draft_and_resume_commits() {
     let t = project();
     let id = add(t.path(), "Crashy", &["--body", "original body\n"]);
-    let ed = write_editor(t.path(), "ed.sh", r#"sed -i 's/original body/edited body/' "$1""#);
+    let ed = write_editor(
+        t.path(),
+        "ed.sh",
+        r#"sed -i 's/original body/edited body/' "$1""#,
+    );
     cmd(t.path())
         .args(["edit", &id.to_string()])
         .env("ISSUES_ASSUME_TTY", "1")
@@ -547,7 +663,10 @@ fn crash_leaves_recoverable_draft_and_resume_commits() {
 
     // `drafts --diff` shows the pending change
     let diff = stdout_of(t.path(), &["drafts", "--diff", &id.to_string()]);
-    assert!(diff.contains("-original body") && diff.contains("+edited body"), "{diff}");
+    assert!(
+        diff.contains("-original body") && diff.contains("+edited body"),
+        "{diff}"
+    );
 
     // `edit` offers resume; resuming (with a no-op editor) commits the
     // draft against the stored base
@@ -559,7 +678,9 @@ fn crash_leaves_recoverable_draft_and_resume_commits() {
         .write_stdin("r\n")
         .assert()
         .success()
-        .stdout(predicate::str::contains(format!("an unsaved draft for #{id} exists")))
+        .stdout(predicate::str::contains(format!(
+            "an unsaved draft for #{id} exists"
+        )))
         .stdout(predicate::str::contains(format!("#{id} saved")));
     assert_eq!(body_of(t.path(), id), "edited body\n");
     assert!(!draft_path(t.path(), id).exists());
@@ -575,9 +696,13 @@ fn tty_guard() {
         .args(["edit", &id.to_string()])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("'issues edit' is interactive and requires a TTY."))
+        .stderr(predicate::str::contains(
+            "'issues edit' is interactive and requires a TTY.",
+        ))
         .stderr(predicate::str::contains("Scriptable alternatives:"))
-        .stderr(predicate::str::contains(format!("issues set-body {id} --body -")));
+        .stderr(predicate::str::contains(format!(
+            "issues set-body {id} --body -"
+        )));
 
     cmd(t.path())
         .args(["add", "x", "-e"])
@@ -603,7 +728,11 @@ fn tty_guard() {
 #[test]
 fn show_plain_is_byte_identical_to_piped_show() {
     let t = project();
-    let id = add(t.path(), "Plain check", &["--body", "line one\n\n- bullet\n"]);
+    let id = add(
+        t.path(),
+        "Plain check",
+        &["--body", "line one\n\n- bullet\n"],
+    );
     let piped = show(t.path(), id);
     let plain = stdout_of(t.path(), &["show", &id.to_string(), "--plain"]);
     assert_eq!(plain, piped);
@@ -612,7 +741,11 @@ fn show_plain_is_byte_identical_to_piped_show() {
 #[test]
 fn show_renders_under_tty_hook() {
     let t = project();
-    let id = add(t.path(), "Render me", &["--body", "## Heading\n\nsome **bold** text\n"]);
+    let id = add(
+        t.path(),
+        "Render me",
+        &["--body", "## Heading\n\nsome **bold** text\n"],
+    );
     let child_id = add(t.path(), "Child render", &["--parent", &id.to_string()]);
     let out = cmd(t.path())
         .env("ISSUES_ASSUME_TTY", "1")
@@ -621,9 +754,15 @@ fn show_renders_under_tty_hook() {
         .unwrap();
     assert!(out.status.success());
     let s = String::from_utf8(out.stdout).unwrap();
-    assert!(s.contains("\x1b["), "expected ANSI escapes in rendered view: {s:?}");
+    assert!(
+        s.contains("\x1b["),
+        "expected ANSI escapes in rendered view: {s:?}"
+    );
     assert!(s.contains(&format!("#{id}")));
-    assert!(!s.contains("---"), "rendered view must not contain front-matter delimiters: {s:?}");
+    assert!(
+        !s.contains("---"),
+        "rendered view must not contain front-matter delimiters: {s:?}"
+    );
 
     // a child issue's rendered header includes its parent
     let child = String::from_utf8(
@@ -671,7 +810,9 @@ fn show_plain_preserves_markdown_body_bytes() {
         .parse()
         .unwrap();
     let s = stdout_of(t.path(), &["show", &id.to_string(), "--plain"]);
-    let idx = s.find("\n---\n").expect("plain show output has no closing ---");
+    let idx = s
+        .find("\n---\n")
+        .expect("plain show output has no closing ---");
     assert_eq!(&s[idx + 5..], body);
 }
 
@@ -680,7 +821,11 @@ fn show_plain_preserves_markdown_body_bytes() {
 #[test]
 fn title_is_yaml_quoted_in_canonical_output() {
     let t = project();
-    let id = add(t.path(), "Formatted output: with a colon", &["--body", "b\n"]);
+    let id = add(
+        t.path(),
+        "Formatted output: with a colon",
+        &["--body", "b\n"],
+    );
     // exact bytes: the title is a YAML double-quoted scalar, so the whole
     // front-matter block is valid YAML even with ': ' in the title
     assert_eq!(
@@ -695,7 +840,10 @@ fn quoted_title_round_trips_through_edit() {
     let title = r#"weird "quoted" \ title: yes"#;
     let id = add(t.path(), title, &["--body", "body\n"]);
     let s = show(t.path(), id);
-    assert!(s.contains(r#"title: "weird \"quoted\" \\ title: yes""#), "{s}");
+    assert!(
+        s.contains(r#"title: "weird \"quoted\" \\ title: yes""#),
+        "{s}"
+    );
     // the edit flow parses the escaped title back; editor only touches the body
     let ed = write_editor(t.path(), "ed.sh", r#"sed -i 's/^body$/edited/' "$1""#);
     cmd(t.path())
@@ -706,14 +854,21 @@ fn quoted_title_round_trips_through_edit() {
         .success();
     assert_eq!(body_of(t.path(), id), "edited\n");
     let list = stdout_of(t.path(), &["list"]);
-    assert!(list.contains(title), "title must survive an edit round-trip: {list}");
+    assert!(
+        list.contains(title),
+        "title must survive an edit round-trip: {list}"
+    );
 }
 
 #[test]
 fn bare_title_still_accepted_on_parse() {
     let t = project();
     let id = add(t.path(), "Old style", &["--body", "b\n"]);
-    let ed = write_editor(t.path(), "ed.sh", r#"sed -i 's/^title: .*$/title: Renamed bare/' "$1""#);
+    let ed = write_editor(
+        t.path(),
+        "ed.sh",
+        r#"sed -i 's/^title: .*$/title: Renamed bare/' "$1""#,
+    );
     cmd(t.path())
         .args(["edit", &id.to_string()])
         .env("ISSUES_ASSUME_TTY", "1")
@@ -752,7 +907,10 @@ fi"#,
         .success()
         .stdout(predicate::str::contains(format!("#{id} saved")));
     let captured = fs::read_to_string(&cap).unwrap();
-    assert!(captured.starts_with("# ERROR: unterminated quoted title on line 3"), "{captured}");
+    assert!(
+        captured.starts_with("# ERROR: unterminated quoted title on line 3"),
+        "{captured}"
+    );
     assert!(stdout_of(t.path(), &["list"]).contains("Fixed title"));
 }
 

@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use chrono::{DateTime, Utc};
 use regex::Regex;
 
-use termimad::{CompoundStyle, MadSkin, StyledChar};
 use termimad::crossterm::style::{Attribute, Color, Stylize as _};
+use termimad::{CompoundStyle, MadSkin, StyledChar};
 
 use crate::model::Issue;
 
@@ -17,7 +17,11 @@ fn skin() -> MadSkin {
     skin.bold = CompoundStyle::with_attr(Attribute::Bold);
     skin.italic = CompoundStyle::with_attr(Attribute::Italic);
     skin.strikeout = CompoundStyle::with_attr(Attribute::CrossedOut);
-    skin.inline_code = CompoundStyle::with_fg(Color::Rgb { r: 87, g: 105, b: 247 });
+    skin.inline_code = CompoundStyle::with_fg(Color::Rgb {
+        r: 87,
+        g: 105,
+        b: 247,
+    });
     for h in &mut skin.headers {
         h.add_attr(Attribute::Bold);
     }
@@ -33,8 +37,12 @@ fn skin() -> MadSkin {
 /// as terminal markdown. Shows exactly the same information as the
 /// canonical serialization — no timestamps, no extra fields.
 pub fn render_show(issue: &Issue) -> String {
-    let mut out =
-        format!("#{} {} [{}]\n", issue.id, issue.title.as_str().bold(), issue.status);
+    let mut out = format!(
+        "#{} {} [{}]\n",
+        issue.id,
+        issue.title.as_str().bold(),
+        issue.status
+    );
     if let Some(p) = issue.parent_id {
         out.push_str(&format!("parent: #{p}\n"));
     }
@@ -114,7 +122,11 @@ pub fn render_list(issues: &[Issue]) -> String {
         }
         t
     };
-    let id_w = rows.iter().map(|(_, i, _)| format!("#{}", i.id).len()).max().unwrap_or(2);
+    let id_w = rows
+        .iter()
+        .map(|(_, i, _)| format!("#{}", i.id).len())
+        .max()
+        .unwrap_or(2);
     let title_w = rows
         .iter()
         .map(|(d, i, s)| title_of(*d, i, *s).chars().count())
@@ -165,9 +177,18 @@ pub fn render_grep(issues: &[&Issue], re: &Regex, context: usize) -> Option<Stri
             show.insert(h, true);
         }
         for (n, is_hit) in show {
-            s.push_str(&format!("  {}{} {}\n", n + 1, if is_hit { ':' } else { '-' }, lines[n]));
+            s.push_str(&format!(
+                "  {}{} {}\n",
+                n + 1,
+                if is_hit { ':' } else { '-' },
+                lines[n]
+            ));
         }
         sections.push(s);
     }
-    if sections.is_empty() { None } else { Some(sections.join("\n")) }
+    if sections.is_empty() {
+        None
+    } else {
+        Some(sections.join("\n"))
+    }
 }

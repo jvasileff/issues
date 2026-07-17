@@ -50,7 +50,11 @@ impl DraftPaths {
     pub fn read_base(&self) -> Option<(String, String)> {
         let base = fs::read_to_string(&self.base).ok()?;
         let meta = fs::read_to_string(&self.meta).ok()?;
-        let token = meta.lines().find_map(|l| l.strip_prefix("base_updated_at="))?.trim().to_string();
+        let token = meta
+            .lines()
+            .find_map(|l| l.strip_prefix("base_updated_at="))?
+            .trim()
+            .to_string();
         Some((base, token))
     }
 
@@ -91,7 +95,10 @@ pub fn list_drafts(root: &Path) -> Vec<DraftInfo> {
                 && !stem.contains('.')
                 && let Ok(id) = stem.parse::<i64>()
             {
-                out.push(DraftInfo { id, age: file_age(&e.path()) });
+                out.push(DraftInfo {
+                    id,
+                    age: file_age(&e.path()),
+                });
             }
         }
     }
@@ -124,7 +131,10 @@ pub fn print_diff(conn: &Connection, root: &Path, id: i64) -> Result<()> {
     match out.status.code() {
         Some(0) => println!("draft is identical to the current issue"),
         Some(1) => std::io::stdout().write_all(&out.stdout)?,
-        _ => bail!("diff failed: {}", String::from_utf8_lossy(&out.stderr).trim()),
+        _ => bail!(
+            "diff failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ),
     }
     Ok(())
 }

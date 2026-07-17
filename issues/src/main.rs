@@ -103,7 +103,9 @@ enum Cmd {
     /// each group. A child issue is indented beneath its parent when both
     /// are displayed; otherwise it is shown flat with a '(sub of #N)'
     /// suffix. If unsaved drafts exist, a one-line notice follows the list.
-    #[command(after_long_help = "Examples:\n  issues list\n  issues list --all\n  issues list --status done\n  issues list --parent 7")]
+    #[command(
+        after_long_help = "Examples:\n  issues list\n  issues list --all\n  issues list --status done\n  issues list --parent 7"
+    )]
     List {
         /// Show all issues, including done and abandoned
         #[arg(long)]
@@ -128,7 +130,9 @@ enum Cmd {
     /// scripts. The canonical form is the same format 'edit' checks out
     /// into $EDITOR. For a windowed, line-numbered view of a large body,
     /// use 'read' instead.
-    #[command(after_long_help = "Examples:\n  issues show 42\n  issues show 42 --plain   # canonical serialization even in a terminal")]
+    #[command(
+        after_long_help = "Examples:\n  issues show 42\n  issues show 42 --plain   # canonical serialization even in a terminal"
+    )]
     Show {
         id: i64,
         /// Print the canonical serialization even in a terminal
@@ -145,7 +149,9 @@ enum Cmd {
     /// --offset 110 --limit 30' shows the neighborhood, str-replace edits
     /// it. An out-of-range --offset prints a note with the body's line count
     /// on stderr and exits 0.
-    #[command(after_long_help = "Examples:\n  issues read 42\n  issues read 42 --offset 110 --limit 30")]
+    #[command(
+        after_long_help = "Examples:\n  issues read 42\n  issues read 42 --offset 110 --limit 30"
+    )]
     Read {
         id: i64,
         /// 1-based body line to start from
@@ -163,7 +169,9 @@ enum Cmd {
     /// path for scripted/Claude use. '--parent <id>' files it as a subtask.
     /// '-e/--edit' opens the new issue in $EDITOR immediately (interactive;
     /// requires a TTY). Prints the new id as 'created #<id>'.
-    #[command(after_long_help = "Examples:\n  issues add \"Fix auth token refresh\"\n  issues add \"Session hardening plan\" --status agreed --body -   # body from stdin\n  issues add \"Rotate refresh tokens\" --parent 57\n  issues add \"Design notes\" -e")]
+    #[command(
+        after_long_help = "Examples:\n  issues add \"Fix auth token refresh\"\n  issues add \"Session hardening plan\" --status agreed --body -   # body from stdin\n  issues add \"Rotate refresh tokens\" --parent 57\n  issues add \"Design notes\" -e"
+    )]
     Add {
         title: String,
         /// Initial status (default: idea)
@@ -186,7 +194,9 @@ enum Cmd {
     /// none' to detach a subtask from its parent. Bodies are changed with
     /// set-body, str-replace, or (for humans) edit. Prints a one-line
     /// confirmation of what changed.
-    #[command(after_long_help = "Examples:\n  issues update 42 --status in-progress\n  issues update 42 --title \"Fix auth token refresh (v2)\"\n  issues update 42 --parent none")]
+    #[command(
+        after_long_help = "Examples:\n  issues update 42 --status in-progress\n  issues update 42 --title \"Fix auth token refresh (v2)\"\n  issues update 42 --parent none"
+    )]
     Update {
         id: i64,
         /// New status (idea|agreed|in-progress|done|abandoned; lenient input)
@@ -205,7 +215,9 @@ enum Cmd {
     /// Pass '--body -' to read the new markdown body from stdin. This is the
     /// non-interactive path for writing a body from scratch; for targeted
     /// changes prefer str-replace.
-    #[command(after_long_help = "Examples:\n  issues set-body 42 --body \"short note\"\n  issues set-body 42 --body -   # body from stdin")]
+    #[command(
+        after_long_help = "Examples:\n  issues set-body 42 --body \"short note\"\n  issues set-body 42 --body -   # body from stdin"
+    )]
     SetBody {
         id: i64,
         /// New body text, or '-' to read the markdown body from stdin
@@ -222,7 +234,9 @@ enum Cmd {
     /// may be empty to delete the matched text. Title/status/parent are
     /// untouched (use update). The read-match-write happens in a single
     /// transaction, so a concurrent writer cannot interleave.
-    #[command(after_long_help = "Examples:\n  issues str-replace 42 --old \"returns 401\" --new \"returns 403\"\n  issues str-replace 42 --old \"- stale item\n\" --new \"\"   # delete a line")]
+    #[command(
+        after_long_help = "Examples:\n  issues str-replace 42 --old \"returns 401\" --new \"returns 403\"\n  issues str-replace 42 --old \"- stale item\n\" --new \"\"   # delete a line"
+    )]
     StrReplace {
         id: i64,
         /// Exact text to replace (must occur exactly once in the body)
@@ -244,7 +258,9 @@ enum Cmd {
     /// numbers are 1-based over the raw body — identical to the numbers
     /// 'read' displays. Context lines from -C use a '<lineno>-' separator.
     /// Prints 'no matches' and exits 0 when nothing matches.
-    #[command(after_long_help = "Examples:\n  issues grep 'refresh token'\n  issues grep -i 'auth' -C 2\n  issues grep --all 'sqlite'\n  issues grep --status done 'migration'")]
+    #[command(
+        after_long_help = "Examples:\n  issues grep 'refresh token'\n  issues grep -i 'auth' -C 2\n  issues grep --all 'sqlite'\n  issues grep --status done 'migration'"
+    )]
     Grep {
         /// Regular expression (Rust regex crate syntax)
         pattern: String,
@@ -293,7 +309,9 @@ enum Cmd {
     /// flow on the draft (TTY required); --diff prints a unified diff
     /// between the draft and the current issue; --discard deletes the draft
     /// after a y/N confirmation (TTY required).
-    #[command(after_long_help = "Examples:\n  issues drafts\n  issues drafts --diff 42\n  issues drafts --resume 42\n  issues drafts --discard 42")]
+    #[command(
+        after_long_help = "Examples:\n  issues drafts\n  issues drafts --diff 42\n  issues drafts --resume 42\n  issues drafts --discard 42"
+    )]
     Drafts {
         /// Re-enter the edit flow starting from the draft for this issue
         #[arg(long, value_name = "ID")]
@@ -340,7 +358,9 @@ fn resolve_body(arg: Option<&str>) -> Result<String> {
         None => Ok(String::new()),
         Some("-") => {
             let mut s = String::new();
-            std::io::stdin().read_to_string(&mut s).context("failed to read body from stdin")?;
+            std::io::stdin()
+                .read_to_string(&mut s)
+                .context("failed to read body from stdin")?;
             Ok(s)
         }
         Some(text) => Ok(text.to_string()),
@@ -354,8 +374,7 @@ fn show_rendered(plain: bool) -> bool {
     if plain || std::env::var("NO_COLOR").is_ok_and(|v| !v.is_empty()) {
         return false;
     }
-    std::env::var("ISSUES_ASSUME_TTY").as_deref() == Ok("1")
-        || std::io::stdout().is_terminal()
+    std::env::var("ISSUES_ASSUME_TTY").as_deref() == Ok("1") || std::io::stdout().is_terminal()
 }
 
 /// Print `text` through a pager (git-style) when stdout is a real TTY,
@@ -397,7 +416,8 @@ fn page_or_print(text: &str) {
 }
 
 fn fmt_parent(p: Option<i64>) -> String {
-    p.map(|v| format!("#{v}")).unwrap_or_else(|| "none".to_string())
+    p.map(|v| format!("#{v}"))
+        .unwrap_or_else(|| "none".to_string())
 }
 
 /// Scope shared by list and grep: --status wins, then --all, else open only.
@@ -425,12 +445,15 @@ fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
 
-        Cmd::List { all, status, parent } => {
+        Cmd::List {
+            all,
+            status,
+            parent,
+        } => {
             let (root, conn) = open_project()?;
             let mut issues = db::all_issues(&conn)?;
             issues.retain(|i| {
-                in_scope(i.status, all, status)
-                    && parent.is_none_or(|p| i.parent_id == Some(p))
+                in_scope(i.status, all, status) && parent.is_none_or(|p| i.parent_id == Some(p))
             });
             if issues.is_empty() {
                 if !all && status.is_none() && parent.is_none() {
@@ -477,7 +500,9 @@ fn run(cli: Cli) -> Result<()> {
                 eprintln!("#{id} body has {} lines", lines.len());
                 return Ok(());
             }
-            let end = limit.map_or(lines.len(), |l| (offset - 1).saturating_add(l).min(lines.len()));
+            let end = limit.map_or(lines.len(), |l| {
+                (offset - 1).saturating_add(l).min(lines.len())
+            });
             let mut stdout = std::io::stdout().lock();
             for (n, line) in lines.iter().enumerate().take(end).skip(offset - 1) {
                 writeln!(stdout, "{:>6}\t{}", n + 1, line)?;
@@ -485,7 +510,13 @@ fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
 
-        Cmd::Add { title, status, parent, body, edit: edit_flag } => {
+        Cmd::Add {
+            title,
+            status,
+            parent,
+            body,
+            edit: edit_flag,
+        } => {
             checkout::validate_title(&title).map_err(|m| anyhow!(m))?;
             if edit_flag {
                 require_tty(
@@ -502,7 +533,13 @@ fn run(cli: Cli) -> Result<()> {
                 bail!("parent issue #{p} not found");
             }
             let body_text = resolve_body(body.as_deref())?;
-            let id = db::add_issue(&conn, &title, status.unwrap_or(Status::Idea), parent, &body_text)?;
+            let id = db::add_issue(
+                &conn,
+                &title,
+                status.unwrap_or(Status::Idea),
+                parent,
+                &body_text,
+            )?;
             println!("created #{id}");
             if edit_flag {
                 edit::edit(&mut conn, &root, id)?;
@@ -510,7 +547,12 @@ fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
 
-        Cmd::Update { id, status, title, parent } => {
+        Cmd::Update {
+            id,
+            status,
+            title,
+            parent,
+        } => {
             if let Some(t) = title.as_deref() {
                 checkout::validate_title(t).map_err(|m| anyhow!(m))?;
             }
@@ -518,9 +560,11 @@ fn run(cli: Cli) -> Result<()> {
             let parent_change: Option<Option<i64>> = match parent.as_deref() {
                 None => None,
                 Some(s) if s.eq_ignore_ascii_case("none") => Some(None),
-                Some(s) => Some(Some(
-                    s.parse::<i64>().map_err(|_| anyhow!("--parent must be an issue id or 'none'"))?,
-                )),
+                Some(s) => {
+                    Some(Some(s.parse::<i64>().map_err(|_| {
+                        anyhow!("--parent must be an issue id or 'none'")
+                    })?))
+                }
             };
             if status.is_none() && title.is_none() && parent_change.is_none() {
                 bail!("nothing to update; provide at least one of --status, --title, --parent");
@@ -544,7 +588,11 @@ fn run(cli: Cli) -> Result<()> {
                     i.title = t.to_string();
                 }
                 if let Some(p) = parent_change {
-                    changes.push(format!("parent: {} → {}", fmt_parent(i.parent_id), fmt_parent(p)));
+                    changes.push(format!(
+                        "parent: {} → {}",
+                        fmt_parent(i.parent_id),
+                        fmt_parent(p)
+                    ));
                     i.parent_id = p;
                 }
                 Ok(())
@@ -569,31 +617,37 @@ fn run(cli: Cli) -> Result<()> {
             if old.is_empty() {
                 bail!("--old must not be empty");
             }
-            db::modify_issue(&mut conn, id, |i| {
-                match i.body.matches(&old).count() {
-                    0 => bail!("--old not found in #{id} body; no changes made"),
-                    1 => {
-                        i.body = i.body.replacen(&old, &new, 1);
-                        Ok(())
-                    }
-                    n => bail!(
-                        "--old matches {n} times in #{id} body; provide more context to make it unique; no changes made"
-                    ),
+            db::modify_issue(&mut conn, id, |i| match i.body.matches(&old).count() {
+                0 => bail!("--old not found in #{id} body; no changes made"),
+                1 => {
+                    i.body = i.body.replacen(&old, &new, 1);
+                    Ok(())
                 }
+                n => bail!(
+                    "--old matches {n} times in #{id} body; provide more context to make it unique; no changes made"
+                ),
             })?;
             println!("#{id} body updated");
             Ok(())
         }
 
-        Cmd::Grep { pattern, all, status, ignore_case, context } => {
+        Cmd::Grep {
+            pattern,
+            all,
+            status,
+            ignore_case,
+            context,
+        } => {
             let (_, conn) = open_project()?;
             let re = RegexBuilder::new(&pattern)
                 .case_insensitive(ignore_case)
                 .build()
                 .map_err(|e| anyhow!("invalid regex: {e}"))?;
             let issues = db::all_issues(&conn)?;
-            let scoped: Vec<&model::Issue> =
-                issues.iter().filter(|i| in_scope(i.status, all, status)).collect();
+            let scoped: Vec<&model::Issue> = issues
+                .iter()
+                .filter(|i| in_scope(i.status, all, status))
+                .collect();
             match output::render_grep(&scoped, &re, context.unwrap_or(0)) {
                 Some(text) => print!("{text}"),
                 None => println!("no matches"),
@@ -607,14 +661,20 @@ fn run(cli: Cli) -> Result<()> {
                 &[
                     format!("issues update {id} --status done --title \"...\""),
                     format!("issues str-replace {id} --old \"...\" --new \"...\""),
-                    format!("issues set-body {id} --body -        (reads markdown body from stdin)"),
+                    format!(
+                        "issues set-body {id} --body -        (reads markdown body from stdin)"
+                    ),
                 ],
             );
             let (root, mut conn) = open_project()?;
             edit::edit(&mut conn, &root, id)
         }
 
-        Cmd::Drafts { resume, diff, discard } => {
+        Cmd::Drafts {
+            resume,
+            diff,
+            discard,
+        } => {
             let picked = [resume.is_some(), diff.is_some(), discard.is_some()]
                 .iter()
                 .filter(|b| **b)

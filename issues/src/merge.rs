@@ -14,7 +14,13 @@ pub enum MergeOutcome {
 
 /// 3-way merge of checkout-format texts via `git merge-file -p` (§8.7).
 /// Temp copies live inside the drafts dir and are removed afterwards.
-pub fn merge_file(dir: &Path, id: i64, base: &str, ours: &str, theirs: &str) -> Result<MergeOutcome> {
+pub fn merge_file(
+    dir: &Path,
+    id: i64,
+    base: &str,
+    ours: &str,
+    theirs: &str,
+) -> Result<MergeOutcome> {
     let b = dir.join(format!("{id}.base.tmp"));
     let o = dir.join(format!("{id}.ours.tmp"));
     let t = dir.join(format!("{id}.theirs.tmp"));
@@ -40,6 +46,9 @@ pub fn merge_file(dir: &Path, id: i64, base: &str, ours: &str, theirs: &str) -> 
         Some(0) => Ok(MergeOutcome::Clean(text)),
         // git merge-file exits with the number of conflicts (< 128).
         Some(n) if n > 0 && n < 128 => Ok(MergeOutcome::Conflict(text)),
-        _ => bail!("git merge-file failed: {}", String::from_utf8_lossy(&out.stderr).trim()),
+        _ => bail!(
+            "git merge-file failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ),
     }
 }
