@@ -479,8 +479,8 @@ fn run(cli: Cli) -> Result<()> {
             }
             let end = limit.map_or(lines.len(), |l| (offset - 1).saturating_add(l).min(lines.len()));
             let mut stdout = std::io::stdout().lock();
-            for n in (offset - 1)..end {
-                writeln!(stdout, "{:>6}\t{}", n + 1, lines[n])?;
+            for (n, line) in lines.iter().enumerate().take(end).skip(offset - 1) {
+                writeln!(stdout, "{:>6}\t{}", n + 1, line)?;
             }
             Ok(())
         }
