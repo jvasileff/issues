@@ -201,7 +201,7 @@ fn lenient_status_parsing() {
         .assert()
         .failure()
         .stderr(predicate::str::contains(
-            "idea, agreed, in-progress, done, abandoned",
+            "idea, agreed, in-progress, done, abandoned, doc",
         ));
 }
 
@@ -494,7 +494,7 @@ fi"#,
         captured.starts_with("# ERROR: unknown status 'bogus' on line 4.\n"),
         "{captured}"
     );
-    assert!(captured.contains("# Valid: idea, agreed, in-progress, done, abandoned."));
+    assert!(captured.contains("# Valid: idea, agreed, in-progress, done, abandoned, doc."));
     assert!(show(t.path(), id).contains("status: done\n"));
     assert!(!draft_path(t.path(), id).exists());
 }
@@ -994,4 +994,122 @@ fn multiline_and_empty_titles_rejected() {
     // db untouched by any of the rejects
     let list = stdout_of(t.path(), &["list"]);
     assert!(list.contains("fine") && !list.contains("lines") && !list.contains("cr"));
+}
+
+// ------------------------------------------------------- doc status
+
+#[test]
+fn doc_status_round_trips_and_is_open() {
+    let t = project();
+    let idea = add(t.path(), "Some idea", &[]);
+    add(t.path(), "Working task", &["--status", "in-progress"]);
+    let doc = add(
+        t.path(),
+        "Team memory",
+        &["--status", "doc", "--body", "remember the singleton\n"],
+    );
+    add(t.path(), "Finished work", &["--status", "done"]);
+
+    // round-trips through add --status
+    assert!(show(t.path(), doc).contains("status: doc\n"));
+
+    // doc counts as open: in default list scope, grouped after idea
+    let list = stdout_of(t.path(), &["list"]);
+    assert!(!list.contains("Finished work"));
+    let pos = |needle: &str| list.find(needle).unwrap();
+    assert!(pos("Working task") < pos("Some idea"));
+    assert!(
+        pos("Some idea") < pos("Team memory"),
+        "docs must group last among open issues:\n{list}"
+    );
+
+    // under --all, docs still precede the closed statuses
+    let all = stdout_of(t.path(), &["list", "--all"]);
+    let apos = |needle: &str| all.find(needle).unwrap();
+    assert!(apos("Team memory") < apos("Finished work"));
+
+    // default grep scope includes doc bodies
+    let g = stdout_of(t.path(), &["grep", "singleton"]);
+    assert!(g.contains("Team memory"));
+
+    // round-trips through update, in and out (transitions unenforced)
+    cmd(t.path())
+        .args(["update", &idea.to_string(), "--status", "doc"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("status: idea → doc"));
+    assert!(show(t.path(), idea).contains("status: doc\n"));
+    cmd(t.path())
+        .args(["update", &idea.to_string(), "--status", "idea"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn v1_database_migrates_to_accept_doc() {
+    let t = project();
+    let parent = add(t.path(), "old parent", &[]);
+    let child = add(t.path(), "old child", &["--parent", &parent.to_string()]);
+    // Downgrade the fresh database to schema v1: a plural 'issues' table
+    // with the status vocabulary in a CHECK constraint lacking 'doc', no
+    // status lookup table, schema_version 1.
+    let db = t.path().join(".issues/issues.db");
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    conn.execute_batch(
+        "PRAGMA foreign_keys=OFF;
+         BEGIN;
+         CREATE TABLE issues (
+             id          INTEGER PRIMARY KEY AUTOINCREMENT,
+             title       TEXT NOT NULL,
+             status      TEXT NOT NULL DEFAULT 'idea'
+                         CHECK (status IN ('idea','agreed','in-progress','done','abandoned')),
+             body        TEXT NOT NULL DEFAULT '',
+             parent_id   INTEGER REFERENCES issues(id) ON DELETE SET NULL,
+             created_at  TEXT NOT NULL,
+             updated_at  TEXT NOT NULL
+         );
+         INSERT INTO issues
+             SELECT id, title, status, body, parent_id, created_at, updated_at FROM issue;
+         DROP TABLE issue;
+         DROP TABLE status;
+         UPDATE meta SET value='1' WHERE key='schema_version';
+         COMMIT;",
+    )
+    .unwrap();
+    drop(conn);
+
+    // Any command migrates on open; 'doc' must then be storable.
+    cmd(t.path())
+        .args(["update", &parent.to_string(), "--status", "doc"])
+        .assert()
+        .success();
+    assert!(show(t.path(), parent).contains("status: doc\n"));
+
+    // Data survived the rebuild: ids, parent links, version stamp, the
+    // seeded vocabulary table, and the id sequence (a new issue must not
+    // reuse an existing id).
+    assert!(show(t.path(), child).contains(&format!("parent: {parent}\n")));
+    let conn = rusqlite::Connection::open(&db).unwrap();
+    let ver: String = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key='schema_version'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(ver, "2");
+    let statuses: Vec<String> = conn
+        .prepare("SELECT name FROM status ORDER BY name")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(
+        statuses,
+        ["abandoned", "agreed", "doc", "done", "idea", "in-progress"]
+    );
+    drop(conn);
+    let next = add(t.path(), "post-migration", &[]);
+    assert!(next > child);
 }

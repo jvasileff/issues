@@ -5,7 +5,7 @@ use crate::model::{Issue, STATUS_VALUES, Status};
 
 /// Help comments appended inside the front-matter block for `edit` checkouts.
 pub const EDIT_COMMENTS: &str = "\
-# status: idea | agreed | in-progress | done | abandoned
+# status: idea | agreed | in-progress | done | abandoned | doc
 # Save and close the editor to write back. Close without changes to abort.
 ";
 

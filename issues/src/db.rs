@@ -8,25 +8,55 @@ use rusqlite::{Connection, OptionalExtension, Row, TransactionBehavior, params};
 
 use crate::model::{Issue, Status};
 
-pub const SCHEMA_VERSION: i64 = 1;
+/// v1: original schema (an 'issues' table; status vocabulary in a CHECK
+/// constraint on it).
+/// v2: table names singular ('issue'); vocabulary moved to the 'status'
+/// lookup table; 'doc' added.
+pub const SCHEMA_VERSION: i64 = 2;
 
-const SCHEMA_SQL: &str = "
-CREATE TABLE IF NOT EXISTS issues (
+/// The status table holds the fixed status vocabulary that issue.status
+/// references. Its rows are part of the schema, not data: they change
+/// only alongside an official SCHEMA_VERSION bump, staying in lockstep
+/// with the Status enum, which is the source of truth.
+const STATUS_TABLE_SQL: &str = "CREATE TABLE IF NOT EXISTS status (name TEXT PRIMARY KEY);";
+
+fn status_seed_sql() -> String {
+    let rows: Vec<String> = Status::ALL
+        .map(|s| format!("('{}')", s.as_str()))
+        .into_iter()
+        .collect();
+    format!(
+        "INSERT OR IGNORE INTO status(name) VALUES {};",
+        rows.join(",")
+    )
+}
+
+/// Column definitions for the issue table, shared by initial creation and
+/// the migration rebuild. The status foreign key is enforced only on
+/// connections with PRAGMA foreign_keys=ON, which configure() always sets.
+const ISSUE_TABLE_BODY: &str = "(
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     title       TEXT NOT NULL,
-    status      TEXT NOT NULL DEFAULT 'idea'
-                CHECK (status IN ('idea','agreed','in-progress','done','abandoned')),
+    status      TEXT NOT NULL DEFAULT 'idea' REFERENCES status(name),
     body        TEXT NOT NULL DEFAULT '',
-    parent_id   INTEGER REFERENCES issues(id) ON DELETE SET NULL,
+    parent_id   INTEGER REFERENCES issue(id) ON DELETE SET NULL,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
-);
+)";
 
-CREATE TABLE IF NOT EXISTS meta (
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
-";
+fn schema_sql() -> String {
+    format!(
+        "{STATUS_TABLE_SQL}
+         {seed}
+         CREATE TABLE IF NOT EXISTS issue {ISSUE_TABLE_BODY};
+
+         CREATE TABLE IF NOT EXISTS meta (
+             key   TEXT PRIMARY KEY,
+             value TEXT NOT NULL
+         );",
+        seed = status_seed_sql()
+    )
+}
 
 const COLS: &str = "id, title, status, body, parent_id, created_at, updated_at";
 
@@ -83,7 +113,7 @@ pub fn init(cwd: &Path) -> Result<()> {
     }
     let conn = Connection::open(dir.join("issues.db"))?;
     configure(&conn)?;
-    conn.execute_batch(SCHEMA_SQL)?;
+    conn.execute_batch(&schema_sql())?;
     conn.execute(
         "INSERT OR IGNORE INTO meta(key, value) VALUES('schema_version', ?1)",
         [SCHEMA_VERSION.to_string()],
@@ -96,7 +126,7 @@ pub fn open(root: &Path) -> Result<Connection> {
     if !path.is_file() {
         bail!("no database at {}; run `issues init`", path.display());
     }
-    let conn =
+    let mut conn =
         Connection::open(&path).with_context(|| format!("cannot open {}", path.display()))?;
     configure(&conn)?;
     let ver: String = conn
@@ -112,7 +142,54 @@ pub fn open(root: &Path) -> Result<Connection> {
             "database schema version {ver} is newer than this binary supports ({SCHEMA_VERSION}); upgrade `issues`"
         );
     }
+    if ver_num < SCHEMA_VERSION {
+        migrate(&mut conn)?;
+    }
     Ok(conn)
+}
+
+/// Upgrade an older database in place. v1 kept the status vocabulary in a
+/// CHECK constraint on the 'issues' table; v2 moves it to the 'status'
+/// lookup table, so a future vocabulary change is a seed INSERT plus a
+/// version bump. Leaving v1 takes one table rebuild (SQLite cannot drop a
+/// CHECK constraint); v2 also renames the table to the singular 'issue',
+/// so the rebuilt table is created directly under its final name, the rows
+/// copied over, and the old table dropped. Copying explicit ids keeps
+/// sqlite_sequence at the current max id.
+fn migrate(conn: &mut Connection) -> Result<()> {
+    // Foreign-key enforcement must be off during the copy: rows arrive in
+    // id order, and a child's parent_id may point at a higher id that has
+    // not been copied yet. The pragma is a no-op inside a transaction, so
+    // toggle it around one.
+    conn.execute_batch("PRAGMA foreign_keys=OFF;")?;
+    let res = (|| -> Result<()> {
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // Re-read the version under the write lock: a concurrent process
+        // may have migrated between our version check and here.
+        let ver: String = tx.query_row(
+            "SELECT value FROM meta WHERE key='schema_version'",
+            [],
+            |r| r.get(0),
+        )?;
+        if ver.parse::<i64>().unwrap_or(i64::MAX) < SCHEMA_VERSION {
+            tx.execute_batch(&format!(
+                "{STATUS_TABLE_SQL}
+                 {seed}
+                 CREATE TABLE issue {ISSUE_TABLE_BODY};
+                 INSERT INTO issue SELECT {COLS} FROM issues;
+                 DROP TABLE issues;",
+                seed = status_seed_sql()
+            ))?;
+            tx.execute(
+                "UPDATE meta SET value=?1 WHERE key='schema_version'",
+                [SCHEMA_VERSION.to_string()],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    })();
+    conn.execute_batch("PRAGMA foreign_keys=ON;")?;
+    res
 }
 
 fn issue_from_row(row: &Row) -> rusqlite::Result<Issue> {
@@ -120,7 +197,7 @@ fn issue_from_row(row: &Row) -> rusqlite::Result<Issue> {
     Ok(Issue {
         id: row.get(0)?,
         title: row.get(1)?,
-        // The CHECK constraint guarantees a valid value.
+        // The status foreign key keeps stored values in the vocabulary.
         status: status.parse().unwrap_or(Status::Idea),
         body: row.get(3)?,
         parent_id: row.get(4)?,
@@ -131,7 +208,7 @@ fn issue_from_row(row: &Row) -> rusqlite::Result<Issue> {
 
 pub fn get_issue(conn: &Connection, id: i64) -> Result<Issue> {
     conn.query_row(
-        &format!("SELECT {COLS} FROM issues WHERE id=?1"),
+        &format!("SELECT {COLS} FROM issue WHERE id=?1"),
         [id],
         issue_from_row,
     )
@@ -141,13 +218,13 @@ pub fn get_issue(conn: &Connection, id: i64) -> Result<Issue> {
 
 pub fn issue_exists(conn: &Connection, id: i64) -> Result<bool> {
     Ok(conn
-        .query_row("SELECT 1 FROM issues WHERE id=?1", [id], |_| Ok(()))
+        .query_row("SELECT 1 FROM issue WHERE id=?1", [id], |_| Ok(()))
         .optional()?
         .is_some())
 }
 
 pub fn all_issues(conn: &Connection) -> Result<Vec<Issue>> {
-    let mut stmt = conn.prepare(&format!("SELECT {COLS} FROM issues"))?;
+    let mut stmt = conn.prepare(&format!("SELECT {COLS} FROM issue"))?;
     let rows = stmt.query_map([], issue_from_row)?;
     Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
@@ -161,7 +238,7 @@ pub fn add_issue(
 ) -> Result<i64> {
     let ts = now_ts();
     conn.execute(
-        "INSERT INTO issues(title, status, body, parent_id, created_at, updated_at)
+        "INSERT INTO issue(title, status, body, parent_id, created_at, updated_at)
          VALUES(?1, ?2, ?3, ?4, ?5, ?5)",
         params![title, status.as_str(), body, parent, ts],
     )?;
@@ -177,7 +254,7 @@ where
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let mut issue = tx
         .query_row(
-            &format!("SELECT {COLS} FROM issues WHERE id=?1"),
+            &format!("SELECT {COLS} FROM issue WHERE id=?1"),
             [id],
             issue_from_row,
         )
@@ -187,7 +264,7 @@ where
     apply(&mut issue)?;
     issue.updated_at = next_ts(&prev);
     tx.execute(
-        "UPDATE issues SET title=?1, status=?2, body=?3, parent_id=?4, updated_at=?5 WHERE id=?6",
+        "UPDATE issue SET title=?1, status=?2, body=?3, parent_id=?4, updated_at=?5 WHERE id=?6",
         params![
             issue.title,
             issue.status.as_str(),
@@ -225,7 +302,7 @@ pub fn commit_edit(
     }
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let cur: Option<String> = tx
-        .query_row("SELECT updated_at FROM issues WHERE id=?1", [id], |r| {
+        .query_row("SELECT updated_at FROM issue WHERE id=?1", [id], |r| {
             r.get(0)
         })
         .optional()?;
@@ -237,7 +314,7 @@ pub fn commit_edit(
     }
     let ts = next_ts(&cur);
     let n = tx.execute(
-        "UPDATE issues SET title=?1, status=?2, body=?3, parent_id=?4, updated_at=?5
+        "UPDATE issue SET title=?1, status=?2, body=?3, parent_id=?4, updated_at=?5
          WHERE id=?6 AND updated_at=?7",
         params![title, status.as_str(), body, parent, ts, id, base_token],
     )?;

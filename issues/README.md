@@ -33,7 +33,7 @@ cargo install --path .
 issues init                                  # creates .issues/ in the current directory
 issues add "Fix auth token refresh"          # -> created #1
 issues add "Session plan" --status agreed --body -   # multi-line body from stdin
-issues list                                  # open items only (idea/agreed/in-progress)
+issues list                                  # open items only (idea/agreed/in-progress/doc)
 issues edit 1                                # human: full edit in $EDITOR
 issues update 1 --status done                # done items disappear from `issues list`
 ```
@@ -44,7 +44,8 @@ directory until it finds `.issues/`.
 ## Statuses
 
 `idea → agreed → in-progress → done`, with `abandoned` reachable from
-anywhere. Transitions are **not** enforced — the vocabulary is the feature.
+anywhere and `doc` sitting outside the lifecycle entirely. Transitions are
+**not** enforced — the vocabulary is the feature.
 
 | Status | Meaning |
 |---|---|
@@ -53,6 +54,11 @@ anywhere. Transitions are **not** enforced — the vocabulary is the feature.
 | `in-progress` | Actively being implemented |
 | `done` | Implemented (and merged/landed as applicable) |
 | `abandoned` | Deliberately not doing this |
+| `doc` | Living document (memory, spec, conventions); stays open, never closes |
+
+`done` and `abandoned` bodies are frozen history; `doc` bodies are the
+opposite, perpetually edited to stay current. In `list`, docs form their own
+group after the actionable statuses so they never crowd active work.
 
 Status input is forgiving everywhere (case-insensitive, `_` accepted for
 `-`); the hyphenated lowercase form is canonical.
@@ -126,11 +132,16 @@ EDITOR="vim" issues edit 42
 Read-only ad-hoc queries via the `sqlite3` CLI are fine, e.g.:
 
 ```sh
-sqlite3 .issues/issues.db "SELECT id, title FROM issues WHERE status='abandoned'"
+sqlite3 .issues/issues.db "SELECT id, title FROM issue WHERE status='abandoned'"
 ```
 
 All **writes** must go through the `issues` CLI so timestamps and edit-flow
-invariants hold.
+invariants hold. If other tooling ever does write, it must run
+`PRAGMA foreign_keys=ON` first: SQLite leaves foreign keys unenforced by
+default, and the schema relies on them (`issue.status` references the
+`status` vocabulary table, whose rows change only with a schema-version
+bump; `issue.parent_id` references `issue.id`). The CLI always sets the
+pragma on its own connections.
 
 ## CLAUDE.md snippet
 
@@ -139,14 +150,14 @@ invariants hold.
 ```markdown
 ## Issue tracker
 This project tracks plans/bugs/todos in a local db via the `issues` CLI (not markdown files, not GitHub).
-- `issues list` — open items (idea/agreed/in-progress). Check this before proposing new work.
+- `issues list` — open items (idea/agreed/in-progress/doc). Check this before proposing new work.
 - `issues show <id>` — full item with markdown body.
 - `issues add "title" --status agreed --body -` — body markdown on stdin; `--parent <id>` for subtasks.
 - `issues grep <regex>` — search all open issues (`-i`, `-C n`, `--all`); output is ripgrep-style with `#id` headings.
 - `issues read <id> --offset <line> --limit <n>` — windowed line-numbered body read (same line numbers as grep); use for large bodies.
-- `issues update <id> --status <s>` — statuses: idea, agreed, in-progress, done, abandoned.
+- `issues update <id> --status <s>` — statuses: idea, agreed, in-progress, done, abandoned, doc.
 - `issues str-replace <id> --old <text> --new <text>` — targeted body edit; `--old` must match exactly once (same rules as your Edit tool).
 - `issues set-body <id> --body -` — replace whole body from stdin.
-Workflow: when we agree on a plan, file it (status `agreed`); split big plans into child issues; set `in-progress` when you start, `done` when implemented, `abandoned` if we drop it.
+Workflow: when we agree on a plan, file it (status `agreed`); split big plans into child issues; set `in-progress` when you start, `done` when implemented, `abandoned` if we drop it. Status `doc` marks a living document (memory, spec, conventions) that stays open and is kept current instead of ever closing.
 Never use `issues edit` (interactive; human-only). Read-only SQL on `.issues/issues.db` is OK; all writes go through the CLI.
 ```

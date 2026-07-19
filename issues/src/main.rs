@@ -21,26 +21,31 @@ use crate::model::Status;
 const CLAUDE_SNIPPET: &str = "\
 ## Issue tracker
 This project tracks plans/bugs/todos in a local db via the `issues` CLI (not markdown files, not GitHub).
-- `issues list` — open items (idea/agreed/in-progress). Check this before proposing new work.
+- `issues list` — open items (idea/agreed/in-progress/doc). Check this before proposing new work.
 - `issues show <id>` — full item with markdown body.
 - `issues add \"title\" --status agreed --body -` — body markdown on stdin; `--parent <id>` for subtasks.
 - `issues grep <regex>` — search all open issues (`-i`, `-C n`, `--all`); output is ripgrep-style with `#id` headings.
 - `issues read <id> --offset <line> --limit <n>` — windowed line-numbered body read (same line numbers as grep); use for large bodies.
-- `issues update <id> --status <s>` — statuses: idea, agreed, in-progress, done, abandoned.
+- `issues update <id> --status <s>` — statuses: idea, agreed, in-progress, done, abandoned, doc.
 - `issues str-replace <id> --old <text> --new <text>` — targeted body edit; `--old` must match exactly once (same rules as your Edit tool).
 - `issues set-body <id> --body -` — replace whole body from stdin.
-Workflow: when we agree on a plan, file it (status `agreed`); split big plans into child issues; set `in-progress` when you start, `done` when implemented, `abandoned` if we drop it.
+Workflow: when we agree on a plan, file it (status `agreed`); split big plans into child issues; set `in-progress` when you start, `done` when implemented, `abandoned` if we drop it. Status `doc` marks a living document (memory, spec, conventions) that stays open and is kept current instead of ever closing.
 Never use `issues edit` (interactive; human-only). Read-only SQL on `.issues/issues.db` is OK; all writes go through the CLI.
 ";
 
 const STATUS_HELP: &str = "\
 Statuses (lifecycle: idea -> agreed -> in-progress -> done; abandoned from anywhere;
-transitions are not enforced — the vocabulary is the feature):
+doc sits outside the lifecycle; transitions are not enforced — the vocabulary is
+the feature):
   idea         brainstorming; not yet agreed to
   agreed       human and Claude have agreed this should happen
   in-progress  actively being implemented
   done         implemented (and merged/landed as applicable)
   abandoned    deliberately not doing this
+  doc          living document (memory, spec, conventions); stays open, never closes
+
+Done and abandoned bodies are frozen history; doc bodies are the opposite,
+perpetually edited to stay current.
 
 Status input is forgiving: case-insensitive, and '_' is accepted for '-'
 (in_progress -> in-progress). The hyphenated lowercase form is canonical in
@@ -101,14 +106,14 @@ enum Cmd {
     #[command(after_long_help = "Example:\n  issues init")]
     Init,
 
-    /// List issues (default: open only — idea, agreed, in-progress)
+    /// List issues (default: open only — idea, agreed, in-progress, doc)
     ///
     /// Shows one issue per line with id, status, title, and relative update
-    /// time. By default only open issues (idea, agreed, in-progress) are
-    /// shown — this is the anti-rot mechanism; done and abandoned items
+    /// time. By default only open issues (idea, agreed, in-progress, doc)
+    /// are shown — this is the anti-rot mechanism; done and abandoned items
     /// disappear from view. Sort order: in-progress first, then agreed, then
-    /// idea (then done/abandoned under --all), newest-updated first within
-    /// each group. A child issue is indented beneath its parent when both
+    /// idea, then doc (then done/abandoned under --all), newest-updated
+    /// first within each group. A child issue is indented beneath its parent when both
     /// are displayed; otherwise it is shown flat with a '(sub of #N)'
     /// suffix. If unsaved drafts exist, a one-line notice follows the list.
     #[command(
@@ -118,7 +123,7 @@ enum Cmd {
         /// Show all issues, including done and abandoned
         #[arg(long)]
         all: bool,
-        /// Show only issues with this status (idea|agreed|in-progress|done|abandoned)
+        /// Show only issues with this status (idea|agreed|in-progress|done|abandoned|doc)
         #[arg(long, value_parser = parse_status)]
         status: Option<Status>,
         /// Show only children of the given issue id
@@ -210,7 +215,7 @@ enum Cmd {
     Update {
         #[arg(value_parser = parse_id)]
         id: i64,
-        /// New status (idea|agreed|in-progress|done|abandoned; lenient input)
+        /// New status (idea|agreed|in-progress|done|abandoned|doc; lenient input)
         #[arg(long, value_parser = parse_status)]
         status: Option<Status>,
         /// New title
@@ -263,7 +268,7 @@ enum Cmd {
     /// Regex search across issue titles and bodies
     ///
     /// The pattern is a Rust `regex`-crate regular expression. Scope
-    /// defaults to open issues (idea, agreed, in-progress); --all or
+    /// defaults to open issues (idea, agreed, in-progress, doc); --all or
     /// --status widen or narrow it, mirroring list. Output is grouped
     /// ripgrep-style with the issue in the filename position: a '#<id>
     /// <title> [<status>]' heading per matching issue, then 'title: ...'
