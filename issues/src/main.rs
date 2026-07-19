@@ -1,3 +1,4 @@
+mod check;
 mod checkout;
 mod db;
 mod drafts;
@@ -58,9 +59,15 @@ fn long_about() -> String {
          walking up from the current directory ('issues init' creates it). Both\n\
          the human and Claude Code use this same binary: the scriptable\n\
          subcommands (list, show, read, add, update, set-body, str-replace,\n\
-         grep) for automation, and the interactive 'edit' subcommand — which\n\
-         checks an issue out into $EDITOR, git-commit style — for humans.\n\n\
+         grep, check, upgrade) for automation, and the interactive 'edit'\n\
+         subcommand — which checks an issue out into $EDITOR, git-commit\n\
+         style — for humans.\n\n\
          {STATUS_HELP}\n\n\
+         Schema versioning: the database records a schema version and a binary\n\
+         refuses a database it does not match exactly. A newer database needs\n\
+         a newer binary; an older database is migrated only by the explicit\n\
+         'issues upgrade' command (pre-flight checks, automatic backup,\n\
+         post-upgrade check) — never implicitly.\n\n\
          Multi-line bodies: 'add' and 'set-body' accept '--body -' to read the\n\
          markdown body from stdin.\n\n\
          Concurrency: the database is opened in WAL mode and every edit is\n\
@@ -344,6 +351,40 @@ enum Cmd {
         #[arg(long, value_name = "ID", value_parser = parse_id)]
         discard: Option<i64>,
     },
+
+    /// Read-only database self-audit
+    ///
+    /// Verifies the database without writing to it. First the schema
+    /// version, which must match this binary exactly: an older database
+    /// errors with a pointer to 'issues upgrade', a newer one needs a
+    /// newer binary, and no further checks run on a mismatch. Then SQLite
+    /// page/index integrity (PRAGMA integrity_check), foreign-key
+    /// consistency (PRAGMA foreign_key_check — the backstop for writers
+    /// that skipped 'PRAGMA foreign_keys=ON'), the status vocabulary
+    /// table matching this binary's statuses exactly, and row sanity
+    /// (non-blank single-line titles, RFC 3339 timestamps). Prints one
+    /// line per check with indented details on failure; exits nonzero if
+    /// any check fails. 'issues upgrade' runs this same suite
+    /// automatically after migrating.
+    #[command(after_long_help = "Example:\n  issues check")]
+    Check,
+
+    /// Migrate the database to this binary's schema version
+    ///
+    /// The only command that migrates; every other command refuses an
+    /// older database and points here. Steps: exit 0 immediately if the
+    /// database is already current; pre-flight the version-independent
+    /// checks (integrity_check, foreign_key_check), aborting with the
+    /// database untouched if they fail; back the database up to
+    /// .issues/issues.db.v<old>.bak via VACUUM INTO — which captures
+    /// committed data still in the WAL, unlike a raw file copy — refusing
+    /// to overwrite an existing backup; migrate inside a single
+    /// transaction; then run the full 'issues check' suite. If the
+    /// post-upgrade check fails, the backup path is printed with a
+    /// restore instruction; nothing is restored automatically. The backup
+    /// is kept on success as well.
+    #[command(after_long_help = "Example:\n  issues upgrade")]
+    Upgrade,
 }
 
 fn main() {
@@ -754,6 +795,63 @@ fn run(cli: Cli) -> Result<()> {
                     .unwrap_or_else(|_| "(unknown issue)".to_string());
                 println!("#{}  {}  ({} old)", d.id, title, d.age);
             }
+            Ok(())
+        }
+
+        Cmd::Check => {
+            let root = db::find_root()?;
+            let conn = db::open_raw(&root)?;
+            let ver = db::schema_version(&conn)?;
+            db::require_current(ver)?;
+            println!("ok: schema version {ver}");
+            let independent = check::preflight(&conn)?;
+            let schema_aware = check::current_schema(&conn)?;
+            if !(independent && schema_aware) {
+                bail!("check failed");
+            }
+            Ok(())
+        }
+
+        Cmd::Upgrade => {
+            let root = db::find_root()?;
+            let mut conn = db::open_raw(&root)?;
+            let ver = db::schema_version(&conn)?;
+            if ver >= db::SCHEMA_VERSION {
+                db::require_current(ver)?;
+                println!("already at schema version {ver}; nothing to do");
+                return Ok(());
+            }
+            println!("pre-flight (version-independent checks):");
+            if !check::preflight(&conn)? {
+                bail!(
+                    "pre-flight failed; database untouched; repair or restore it before upgrading"
+                );
+            }
+            let bak = root.join(".issues").join(format!("issues.db.v{ver}.bak"));
+            if bak.exists() {
+                bail!(
+                    "backup target {} already exists; move or remove it first",
+                    bak.display()
+                );
+            }
+            let bak_str = bak
+                .to_str()
+                .ok_or_else(|| anyhow!("backup path {} is not valid UTF-8", bak.display()))?;
+            conn.execute("VACUUM INTO ?1", [bak_str])?;
+            println!("backed up v{ver} database to {}", bak.display());
+            db::migrate(&mut conn)?;
+            println!("migrated to schema version {}", db::SCHEMA_VERSION);
+            println!("post-upgrade check:");
+            println!("ok: schema version {}", db::SCHEMA_VERSION);
+            let independent = check::preflight(&conn)?;
+            let schema_aware = check::current_schema(&conn)?;
+            if !(independent && schema_aware) {
+                bail!(
+                    "post-upgrade check failed; the pre-upgrade database is preserved at {}; to restore it, replace .issues/issues.db with that file",
+                    bak.display()
+                );
+            }
+            println!("upgrade complete (backup kept at {})", bak.display());
             Ok(())
         }
     }

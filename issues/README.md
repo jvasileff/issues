@@ -81,6 +81,8 @@ help text is intentionally exhaustive.
 | `issues grep <regex> [--all] [--status s] [-i] [-C n]` | ripgrep-style grouped search across titles and bodies |
 | `issues edit <id>` | Interactive `$EDITOR` flow (human-only; requires a TTY) |
 | `issues drafts [--resume id \| --diff id \| --discard id]` | List/manage unsaved edit drafts |
+| `issues check` | Read-only self-audit: schema version, integrity, foreign keys, status vocabulary, row sanity |
+| `issues upgrade` | Migrate an older database to this binary's schema (pre-flight, backup, post-check) |
 
 In a terminal, `issues show` renders the issue for reading: a bold header
 plus the body formatted as markdown (headers, bullets, code blocks), wrapped
@@ -126,6 +128,27 @@ multi-word values work unmodified:
 EDITOR="code --wait" issues edit 42    # VS Code
 EDITOR="vim" issues edit 42
 ```
+
+## Schema versions and upgrades
+
+The database records a schema version, and a binary refuses any database it
+does not match exactly: a newer database needs a newer binary, and an older
+database is never migrated implicitly — every command errors and points at
+`issues upgrade`, the only command that migrates. An upgrade:
+
+1. runs the version-independent subset of `issues check`
+   (`PRAGMA integrity_check`, `PRAGMA foreign_key_check`) as a pre-flight,
+   aborting with the database untouched if it fails;
+2. backs the database up to `.issues/issues.db.v<old>.bak` via
+   `VACUUM INTO` — which captures committed data still in the WAL, unlike a
+   raw file copy — and refuses to overwrite an existing backup;
+3. migrates inside a single transaction (a failure rolls back, leaving the
+   database at the old version);
+4. finishes with the full `issues check` suite. On failure the backup path
+   is printed with a restore instruction; nothing is restored
+   automatically, and the backup is kept on success too.
+
+`issues check` itself is a read-only self-audit you can run any time.
 
 ## Direct SQL access
 

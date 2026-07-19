@@ -1045,16 +1045,11 @@ fn doc_status_round_trips_and_is_open() {
         .success();
 }
 
-#[test]
-fn v1_database_migrates_to_accept_doc() {
-    let t = project();
-    let parent = add(t.path(), "old parent", &[]);
-    let child = add(t.path(), "old child", &["--parent", &parent.to_string()]);
-    // Downgrade the fresh database to schema v1: a plural 'issues' table
-    // with the status vocabulary in a CHECK constraint lacking 'doc', no
-    // status lookup table, schema_version 1.
-    let db = t.path().join(".issues/issues.db");
-    let conn = rusqlite::Connection::open(&db).unwrap();
+/// Rewrite a freshly-initialized database to schema v1: a plural 'issues'
+/// table with the status vocabulary in a CHECK constraint lacking 'doc',
+/// no status lookup table, schema_version 1.
+fn downgrade_to_v1(dir: &Path) {
+    let conn = rusqlite::Connection::open(dir.join(".issues/issues.db")).unwrap();
     conn.execute_batch(
         "PRAGMA foreign_keys=OFF;
          BEGIN;
@@ -1076,20 +1071,61 @@ fn v1_database_migrates_to_accept_doc() {
          COMMIT;",
     )
     .unwrap();
-    drop(conn);
+}
 
-    // Any command migrates on open; 'doc' must then be storable.
+#[test]
+fn old_database_refused_until_upgraded() {
+    let t = project();
+    let id = add(t.path(), "old-world issue", &[]);
+    downgrade_to_v1(t.path());
+
+    // No command migrates implicitly; each points at 'issues upgrade'.
+    for args in [
+        vec!["list"],
+        vec!["show", "1"],
+        vec!["update", "1", "--status", "done"],
+        vec!["init"],
+        vec!["check"],
+    ] {
+        cmd(t.path())
+            .args(&args)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("run `issues upgrade`"));
+    }
+    let _ = id;
+}
+
+#[test]
+fn upgrade_migrates_v1_with_backup_and_check() {
+    let t = project();
+    let parent = add(t.path(), "old parent", &[]);
+    let child = add(t.path(), "old child", &["--parent", &parent.to_string()]);
+    downgrade_to_v1(t.path());
+
+    cmd(t.path())
+        .arg("upgrade")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("backed up v1 database"))
+        .stdout(predicate::str::contains("migrated to schema version 2"))
+        .stdout(predicate::str::contains("ok: status vocabulary"))
+        .stdout(predicate::str::contains("upgrade complete"));
+
+    // 'doc' is storable now, and data survived: ids, parent links, the
+    // seeded vocabulary, and the id sequence (no id reuse).
     cmd(t.path())
         .args(["update", &parent.to_string(), "--status", "doc"])
         .assert()
         .success();
     assert!(show(t.path(), parent).contains("status: doc\n"));
-
-    // Data survived the rebuild: ids, parent links, version stamp, the
-    // seeded vocabulary table, and the id sequence (a new issue must not
-    // reuse an existing id).
     assert!(show(t.path(), child).contains(&format!("parent: {parent}\n")));
-    let conn = rusqlite::Connection::open(&db).unwrap();
+    let next = add(t.path(), "post-migration", &[]);
+    assert!(next > child);
+
+    // The backup is the pre-upgrade v1 database, WAL content included.
+    let bak = t.path().join(".issues/issues.db.v1.bak");
+    let conn = rusqlite::Connection::open(&bak).unwrap();
     let ver: String = conn
         .query_row(
             "SELECT value FROM meta WHERE key='schema_version'",
@@ -1097,19 +1133,90 @@ fn v1_database_migrates_to_accept_doc() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(ver, "2");
-    let statuses: Vec<String> = conn
-        .prepare("SELECT name FROM status ORDER BY name")
-        .unwrap()
-        .query_map([], |r| r.get(0))
-        .unwrap()
-        .collect::<Result<_, _>>()
+    assert_eq!(ver, "1");
+    let rows: i64 = conn
+        .query_row("SELECT count(*) FROM issues", [], |r| r.get(0))
         .unwrap();
+    assert_eq!(rows, 2);
+}
+
+#[test]
+fn upgrade_is_a_noop_when_current() {
+    let t = project();
+    cmd(t.path())
+        .arg("upgrade")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "already at schema version 2; nothing to do",
+        ));
+    assert!(!t.path().join(".issues/issues.db.v1.bak").exists());
+}
+
+#[test]
+fn upgrade_refuses_to_overwrite_backup() {
+    let t = project();
+    add(t.path(), "x", &[]);
+    downgrade_to_v1(t.path());
+    fs::write(t.path().join(".issues/issues.db.v1.bak"), "precious").unwrap();
+
+    cmd(t.path())
+        .arg("upgrade")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("already exists"));
+    // Database untouched, still v1; the stale backup is intact.
+    cmd(t.path())
+        .arg("list")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("run `issues upgrade`"));
     assert_eq!(
-        statuses,
-        ["abandoned", "agreed", "doc", "done", "idea", "in-progress"]
+        fs::read_to_string(t.path().join(".issues/issues.db.v1.bak")).unwrap(),
+        "precious"
     );
+}
+
+#[test]
+fn check_passes_on_healthy_database() {
+    let t = project();
+    add(t.path(), "fine issue", &["--status", "doc"]);
+    cmd(t.path())
+        .arg("check")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ok: schema version 2"))
+        .stdout(predicate::str::contains("ok: integrity_check"))
+        .stdout(predicate::str::contains("ok: foreign_key_check"))
+        .stdout(predicate::str::contains("ok: status vocabulary"))
+        .stdout(predicate::str::contains("ok: row sanity"));
+}
+
+#[test]
+fn check_catches_damage_from_unenforced_writers() {
+    let t = project();
+    let id = add(t.path(), "victim", &[]);
+    // Simulate tooling that wrote without PRAGMA foreign_keys=ON and
+    // tampered with vocabulary and rows.
+    let conn = rusqlite::Connection::open(t.path().join(".issues/issues.db")).unwrap();
+    conn.execute_batch(&format!(
+        "PRAGMA foreign_keys=OFF;
+         INSERT INTO issue(title, status, created_at, updated_at)
+             VALUES('rogue', 'bogus', 'not-a-time', '2026-01-01T00:00:00.000000Z');
+         DELETE FROM status WHERE name='doc';
+         UPDATE issue SET title='' WHERE id={id};"
+    ))
+    .unwrap();
     drop(conn);
-    let next = add(t.path(), "post-migration", &[]);
-    assert!(next > child);
+
+    cmd(t.path())
+        .arg("check")
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("FAIL: foreign_key_check"))
+        .stdout(predicate::str::contains("FAIL: status vocabulary"))
+        .stdout(predicate::str::contains("missing status 'doc'"))
+        .stdout(predicate::str::contains("FAIL: row sanity"))
+        .stdout(predicate::str::contains("not RFC 3339"))
+        .stderr(predicate::str::contains("check failed"));
 }

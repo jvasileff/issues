@@ -111,8 +111,16 @@ pub fn init(cwd: &Path) -> Result<()> {
     if !gitignore.exists() {
         std::fs::write(&gitignore, "*\n")?;
     }
-    let conn = Connection::open(dir.join("issues.db"))?;
+    let db_path = dir.join("issues.db");
+    let existed = db_path.is_file();
+    let conn = Connection::open(&db_path)?;
     configure(&conn)?;
+    // Re-running init must not layer current-version tables onto an older
+    // database; that would leave a hybrid the migration cannot rebuild. A
+    // pre-existing file without a version (empty or partial) is fair game.
+    if existed && let Ok(ver) = schema_version(&conn) {
+        require_current(ver)?;
+    }
     conn.execute_batch(&schema_sql())?;
     conn.execute(
         "INSERT OR IGNORE INTO meta(key, value) VALUES('schema_version', ?1)",
@@ -121,14 +129,21 @@ pub fn init(cwd: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn open(root: &Path) -> Result<Connection> {
+/// Open the database with no schema-version gate: for check and upgrade,
+/// which handle version mismatches themselves. Every other caller goes
+/// through open().
+pub fn open_raw(root: &Path) -> Result<Connection> {
     let path = root.join(".issues").join("issues.db");
     if !path.is_file() {
         bail!("no database at {}; run `issues init`", path.display());
     }
-    let mut conn =
+    let conn =
         Connection::open(&path).with_context(|| format!("cannot open {}", path.display()))?;
     configure(&conn)?;
+    Ok(conn)
+}
+
+pub fn schema_version(conn: &Connection) -> Result<i64> {
     let ver: String = conn
         .query_row(
             "SELECT value FROM meta WHERE key='schema_version'",
@@ -136,15 +151,30 @@ pub fn open(root: &Path) -> Result<Connection> {
             |r| r.get(0),
         )
         .context("database has no schema_version; not an issues database?")?;
-    let ver_num: i64 = ver.parse().unwrap_or(i64::MAX);
-    if ver_num > SCHEMA_VERSION {
+    ver.parse()
+        .map_err(|_| anyhow!("schema_version '{ver}' is not a number"))
+}
+
+/// Fail unless the database is exactly this binary's schema version.
+/// Migration is never implicit: an older database is only ever changed by
+/// the explicit `issues upgrade` command.
+pub fn require_current(ver: i64) -> Result<()> {
+    if ver > SCHEMA_VERSION {
         bail!(
             "database schema version {ver} is newer than this binary supports ({SCHEMA_VERSION}); upgrade `issues`"
         );
     }
-    if ver_num < SCHEMA_VERSION {
-        migrate(&mut conn)?;
+    if ver < SCHEMA_VERSION {
+        bail!(
+            "database schema version {ver} is older than this binary ({SCHEMA_VERSION}); run `issues upgrade`"
+        );
     }
+    Ok(())
+}
+
+pub fn open(root: &Path) -> Result<Connection> {
+    let conn = open_raw(root)?;
+    require_current(schema_version(&conn)?)?;
     Ok(conn)
 }
 
@@ -156,7 +186,11 @@ pub fn open(root: &Path) -> Result<Connection> {
 /// so the rebuilt table is created directly under its final name, the rows
 /// copied over, and the old table dropped. Copying explicit ids keeps
 /// sqlite_sequence at the current max id.
-fn migrate(conn: &mut Connection) -> Result<()> {
+///
+/// Called only by the upgrade command, never on ordinary open: the
+/// caller is responsible for the surrounding ritual (pre-flight checks,
+/// backup, post-upgrade check).
+pub fn migrate(conn: &mut Connection) -> Result<()> {
     // Foreign-key enforcement must be off during the copy: rows arrive in
     // id order, and a child's parent_id may point at a higher id that has
     // not been copied yet. The pragma is a no-op inside a transaction, so
