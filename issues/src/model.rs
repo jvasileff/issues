@@ -58,6 +58,12 @@ impl Status {
             Status::Idea | Status::Agreed | Status::InProgress | Status::Doc
         )
     }
+
+    /// Done and abandoned are frozen history: non-status edits to them are
+    /// blocked unless --force is given, guarding against accidental changes.
+    pub fn is_frozen(self) -> bool {
+        matches!(self, Status::Done | Status::Abandoned)
+    }
 }
 
 impl fmt::Display for Status {

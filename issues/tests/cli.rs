@@ -313,6 +313,86 @@ fn str_replace() {
     assert_eq!(body_of(t.path(), id), "three\ndup\ndup\n");
 }
 
+#[test]
+fn frozen_issues_require_force_for_non_status_edits() {
+    let t = project();
+    let id = add(
+        t.path(),
+        "Frozen",
+        &["--status", "done", "--body", "body\n"],
+    );
+    let ids = id.to_string();
+
+    // Every non-status edit is blocked on a done issue, body unchanged, and
+    // the error names --force so it is not a dead end.
+    for args in [
+        vec!["set-body", &ids, "--body", "new"],
+        vec!["str-replace", &ids, "--old", "body", "--new", "changed"],
+        vec!["update", &ids, "--title", "New title"],
+    ] {
+        cmd(t.path())
+            .args(&args)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("frozen history"))
+            .stderr(predicate::str::contains("--force"));
+    }
+    assert_eq!(body_of(t.path(), id), "body\n");
+    assert!(show(t.path(), id).contains("title: \"Frozen\""));
+
+    // Abandoned is frozen the same way.
+    cmd(t.path())
+        .args(["update", &ids, "--status", "abandoned"])
+        .assert()
+        .success();
+    cmd(t.path())
+        .args(["set-body", &ids, "--body", "new"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("abandoned (frozen history)"));
+
+    // Status changes never need --force: reopening is a normal operation.
+    cmd(t.path())
+        .args(["update", &ids, "--status", "in-progress"])
+        .assert()
+        .success();
+    // ... and once reopened, non-status edits flow freely again.
+    cmd(t.path())
+        .args(["set-body", &ids, "--body", "reopened body\n"])
+        .assert()
+        .success();
+    assert_eq!(body_of(t.path(), id), "reopened body\n");
+
+    // --force permits the edit on a frozen issue.
+    cmd(t.path())
+        .args(["update", &ids, "--status", "done"])
+        .assert()
+        .success();
+    cmd(t.path())
+        .args(["set-body", &ids, "--body", "forced\n", "--force"])
+        .assert()
+        .success();
+    assert_eq!(body_of(t.path(), id), "forced\n");
+    cmd(t.path())
+        .args([
+            "str-replace",
+            &ids,
+            "--old",
+            "forced",
+            "--new",
+            "FORCED",
+            "--force",
+        ])
+        .assert()
+        .success();
+    cmd(t.path())
+        .args(["update", &ids, "--title", "Forced title", "--force"])
+        .assert()
+        .success();
+    assert_eq!(body_of(t.path(), id), "FORCED\n");
+    assert!(show(t.path(), id).contains("title: \"Forced title\""));
+}
+
 // ---------------------------------------------------------------- §13.6
 
 #[test]

@@ -220,7 +220,9 @@ enum Cmd {
     /// Metadata-only update; at least one flag is required. Use '--parent
     /// none' to detach a subtask from its parent. Bodies are changed with
     /// set-body, str-replace, or (for humans) edit. Prints a one-line
-    /// confirmation of what changed.
+    /// confirmation of what changed. A title or parent change to a done or
+    /// abandoned issue (frozen history) requires --force; status changes
+    /// never do.
     #[command(
         after_long_help = "Examples:\n  issues update 42 --status in-progress\n  issues update 42 --title \"Fix auth token refresh (v2)\"\n  issues update 42 --parent none"
     )]
@@ -236,13 +238,17 @@ enum Cmd {
         /// New parent issue id, or 'none' to clear the parent
         #[arg(long, value_name = "ID|none")]
         parent: Option<String>,
+        /// Permit a title/parent change to a done or abandoned issue
+        #[arg(long)]
+        force: bool,
     },
 
     /// Replace an issue's whole body (scriptable)
     ///
     /// Pass '--body -' to read the new markdown body from stdin. This is the
     /// non-interactive path for writing a body from scratch; for targeted
-    /// changes prefer str-replace.
+    /// changes prefer str-replace. Editing the body of a done or abandoned
+    /// issue (frozen history) requires --force.
     #[command(
         after_long_help = "Examples:\n  issues set-body 42 --body \"short note\"\n  issues set-body 42 --body -   # body from stdin"
     )]
@@ -252,6 +258,9 @@ enum Cmd {
         /// New body text, or '-' to read the markdown body from stdin
         #[arg(long, allow_hyphen_values = true)]
         body: String,
+        /// Permit editing the body of a done or abandoned issue
+        #[arg(long)]
+        force: bool,
     },
 
     /// Targeted body edit: replace one exact occurrence of --old with --new
@@ -262,7 +271,8 @@ enum Cmd {
     /// made — add more surrounding context to make the match unique. --new
     /// may be empty to delete the matched text. Title/status/parent are
     /// untouched (use update). The read-match-write happens in a single
-    /// transaction, so a concurrent writer cannot interleave.
+    /// transaction, so a concurrent writer cannot interleave. Editing the
+    /// body of a done or abandoned issue (frozen history) requires --force.
     #[command(
         after_long_help = "Examples:\n  issues str-replace 42 --old \"returns 401\" --new \"returns 403\"\n  issues str-replace 42 --old \"- stale item\n\" --new \"\"   # delete a line"
     )]
@@ -275,6 +285,9 @@ enum Cmd {
         /// Replacement text (may be empty, deleting the matched text)
         #[arg(long, allow_hyphen_values = true)]
         new: String,
+        /// Permit editing the body of a done or abandoned issue
+        #[arg(long)]
+        force: bool,
     },
 
     /// Regex search across issue titles and bodies
@@ -619,6 +632,7 @@ fn run(cli: Cli) -> Result<()> {
             status,
             title,
             parent,
+            force,
         } => {
             if let Some(t) = title.as_deref() {
                 checkout::validate_title(t).map_err(|m| anyhow!(m))?;
@@ -644,8 +658,15 @@ fn run(cli: Cli) -> Result<()> {
                     bail!("parent issue #{p} not found");
                 }
             }
+            let non_status_edit = title.is_some() || parent_change.is_some();
             let mut changes: Vec<String> = Vec::new();
             db::modify_issue(&mut conn, id, |i| {
+                if non_status_edit && i.status.is_frozen() && !force {
+                    bail!(
+                        "#{id} is {} (frozen history); a title or parent edit requires --force",
+                        i.status
+                    );
+                }
                 if let Some(s) = status {
                     changes.push(format!("status: {} → {}", i.status, s));
                     i.status = s;
@@ -668,10 +689,16 @@ fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
 
-        Cmd::SetBody { id, body } => {
+        Cmd::SetBody { id, body, force } => {
             let (_, mut conn) = open_project()?;
             let body_text = resolve_body(Some(&body))?;
             db::modify_issue(&mut conn, id, |i| {
+                if i.status.is_frozen() && !force {
+                    bail!(
+                        "#{id} is {} (frozen history); editing the body requires --force",
+                        i.status
+                    );
+                }
                 i.body = body_text;
                 Ok(())
             })?;
@@ -679,20 +706,33 @@ fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
 
-        Cmd::StrReplace { id, old, new } => {
+        Cmd::StrReplace {
+            id,
+            old,
+            new,
+            force,
+        } => {
             let (_, mut conn) = open_project()?;
             if old.is_empty() {
                 bail!("--old must not be empty");
             }
-            db::modify_issue(&mut conn, id, |i| match i.body.matches(&old).count() {
-                0 => bail!("--old not found in #{id} body; no changes made"),
-                1 => {
-                    i.body = i.body.replacen(&old, &new, 1);
-                    Ok(())
+            db::modify_issue(&mut conn, id, |i| {
+                if i.status.is_frozen() && !force {
+                    bail!(
+                        "#{id} is {} (frozen history); editing the body requires --force",
+                        i.status
+                    );
                 }
-                n => bail!(
-                    "--old matches {n} times in #{id} body; provide more context to make it unique; no changes made"
-                ),
+                match i.body.matches(&old).count() {
+                    0 => bail!("--old not found in #{id} body; no changes made"),
+                    1 => {
+                        i.body = i.body.replacen(&old, &new, 1);
+                        Ok(())
+                    }
+                    n => bail!(
+                        "--old matches {n} times in #{id} body; provide more context to make it unique; no changes made"
+                    ),
+                }
             })?;
             println!("#{id} body updated");
             Ok(())
