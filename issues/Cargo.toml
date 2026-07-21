@@ -2,6 +2,11 @@
 name = "issues"
 version = "0.1.0"
 edition = "2024"
+# Floor set by libsqlite3-sys 0.38.1 (via rusqlite 0.40), whose build.rs uses
+# the cfg_select! macro stabilized in Rust 1.95.0. The crate declares no MSRV
+# of its own, so without this pin an older toolchain fails with a cryptic
+# "unstable library feature cfg_select" error instead of a clear message.
+rust-version = "1.95"
 description = "Project-local issue tracker for human + Claude Code collaboration"
 
 [dependencies]
