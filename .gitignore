@@ -1,4 +1,5 @@
 *.sw?
 .claude/
+CLAUDE.local.md
 NOGIT*
 target/
