@@ -74,7 +74,7 @@ pub fn relative_time(ts: &str) -> String {
     relative_secs(secs, "now")
 }
 
-/// Aligned listing (§7.2). Displayed children render indented beneath their
+/// Aligned listing. Displayed children render indented beneath their
 /// parent when the parent is displayed too; otherwise flat with a
 /// `(sub of #N)` suffix.
 pub fn render_list(issues: &[Issue]) -> String {
@@ -146,7 +146,7 @@ pub fn render_list(issues: &[Issue]) -> String {
     out
 }
 
-/// Grouped, ripgrep-style search output (§7.8). Returns `None` on no matches.
+/// Grouped, ripgrep-style search output. Returns `None` on no matches.
 /// Body line numbers are 1-based over the raw body, identical to `read`.
 pub fn render_grep(issues: &[&Issue], re: &Regex, context: usize) -> Option<String> {
     let mut sections: Vec<String> = Vec::new();

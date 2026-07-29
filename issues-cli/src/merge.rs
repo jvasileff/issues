@@ -12,7 +12,7 @@ pub enum MergeOutcome {
     NoGit,
 }
 
-/// 3-way merge of checkout-format texts via `git merge-file -p` (§8.7).
+/// 3-way merge of checkout-format texts via `git merge-file -p`.
 /// Temp copies live inside the drafts dir and are removed afterwards.
 pub fn merge_file(
     dir: &Path,

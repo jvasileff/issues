@@ -419,7 +419,7 @@ fn open_project() -> Result<(PathBuf, Connection)> {
     Ok((root, conn))
 }
 
-/// §7.12: interactive commands refuse to run without a TTY, printing
+/// Interactive commands refuse to run without a TTY, printing
 /// scriptable alternatives. `ISSUES_ASSUME_TTY=1` bypasses (test hook).
 fn require_tty(what: &str, alternatives: &[String]) {
     if edit::tty_ok() {

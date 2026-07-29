@@ -317,7 +317,7 @@ pub enum EditCommit {
     Stale,
 }
 
-/// Optimistic-locked write-back for the `edit` flow (§8.5): the UPDATE is
+/// Optimistic-locked write-back for the `edit` flow: the UPDATE is
 /// guarded by `WHERE updated_at = base_token`; zero affected rows means the
 /// row changed underneath us and the caller must merge.
 pub fn commit_edit(

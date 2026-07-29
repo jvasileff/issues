@@ -9,7 +9,7 @@ pub const EDIT_COMMENTS: &str = "\
 # Save and close the editor to write back. Close without changes to abort.
 ";
 
-/// Title rule (issue #8), shared by every write boundary: non-blank and
+/// Title rule, shared by every write boundary: non-blank and
 /// single-line. Single-line is what keeps the front-matter serialization
 /// parseable line-by-line (and, quoted, valid YAML).
 pub fn validate_title(title: &str) -> Result<(), String> {
@@ -74,7 +74,7 @@ pub fn unquote_title(val: &str) -> Result<String, String> {
 
 const TITLE_HINT: &str = r#"Write the title as "..." (escape " and \ with a backslash), or bare; a bare title may not begin with '"'."#;
 
-/// Serialize an issue in the canonical checkout format (§8.2): a strict,
+/// Serialize an issue in the canonical checkout format: a strict,
 /// hand-parsed front-matter block followed by the body verbatim.
 pub fn render(issue: &Issue, with_comments: bool) -> String {
     let mut s = String::new();

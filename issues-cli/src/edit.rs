@@ -83,8 +83,8 @@ struct LoopCtx {
     prev_text: String,
 }
 
-/// §8.3–§8.7: parse / retry / lock-check / merge / commit, until the edit
-/// lands, the user aborts, or there was nothing to save.
+/// The edit loop: parse / retry / lock-check / merge / commit, until the
+/// edit lands, the user aborts, or there was nothing to save.
 fn run_loop(
     conn: &mut Connection,
     root: &Path,
@@ -159,7 +159,8 @@ fn run_loop(
         )? {
             db::EditCommit::Committed => {
                 // Only now — after the transaction committed — may the
-                // draft trio go away (§3).
+                // draft trio go away: a crash at any earlier point must
+                // leave the draft on disk for the next run to recover.
                 paths.delete()?;
                 println!("#{} saved (status: {})", paths.id, status);
                 return Ok(());
@@ -215,7 +216,7 @@ fn run_loop(
     }
 }
 
-/// §8.6: a draft already exists for this issue.
+/// Resume path: a draft already exists for this issue.
 fn resume(conn: &mut Connection, root: &Path, paths: &DraftPaths) -> Result<()> {
     println!(
         "an unsaved draft for #{} exists (from {} ago).",
