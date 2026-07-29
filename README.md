@@ -1,19 +1,21 @@
-# `issues` — project-local issue tracker for human + Claude Code collaboration
+# Issues
+
+*Project-local issue tracker for rapid AI-assisted development.*
 
 Human/AI pair development generates a constant stream of plans, feature ideas,
 bug notes, and todos. Full trackers (GitHub Issues, Jira) impose too much
 ceremony for that pace, so the work products end up as ad-hoc markdown files
 that rot. `issues` replaces them with a single SQLite database in the project
 directory (`.issues/issues.db`) and one CLI binary used by **both** the human
-and Claude Code:
+and the AI:
 
-- **Claude Code** uses the scriptable subcommands (`list`, `show`, `read`,
+- **The AI** uses the scriptable subcommands (`list`, `show`, `read`,
   `add`, `update`, `set-body`, `str-replace`, `grep`) to file agreed plans,
   track status, and consult outstanding work before proposing new work.
 - **The human** uses the same binary plus the interactive `edit` command,
   which checks an issue out into `$EDITOR` (git-commit style) and writes it
   back safely — with durable drafts, crash recovery, and automatic 3-way
-  merge when Claude modifies the issue mid-edit.
+  merge when the AI modifies the issue mid-edit.
 
 This is a v1 prototype: no web UI, no tags/priorities/comments, no JSON
 output, no git sync. The database directory is kept out of git entirely
@@ -24,8 +26,10 @@ output, no git sync. The database directory is kept out of git entirely
 Requires stable Rust and — for the `edit` merge path — `git` on PATH.
 
 ```sh
-cargo install --path .
+cargo install --path issues-cli
 ```
+
+That installs the `issues` binary from the `issues-cli` crate.
 
 ## Quick start
 
@@ -50,7 +54,7 @@ anywhere and `doc` sitting outside the lifecycle entirely. Transitions are
 | Status | Meaning |
 |---|---|
 | `idea` | Brainstorming; not yet agreed to |
-| `agreed` | Human and Claude have agreed this should happen |
+| `agreed` | Human and AI have agreed this should happen |
 | `in-progress` | Actively being implemented |
 | `done` | Implemented (and merged/landed as applicable) |
 | `abandoned` | Deliberately not doing this |
@@ -70,7 +74,7 @@ help text is intentionally exhaustive.
 
 | Command | Purpose |
 |---|---|
-| `issues init` | Create `.issues/` (db, drafts dir, `.gitignore`); prints the CLAUDE.md snippet |
+| `issues init` | Create `.issues/` (db, drafts dir, `.gitignore`); prints the AI instructions snippet |
 | `issues list [--all] [--status s] [--parent id]` | Aligned listing; open issues only by default (the anti-rot mechanism); children indent beneath their parent |
 | `issues show <id>` | Full issue: front-matter + markdown body |
 | `issues read <id> [--offset n] [--limit n]` | Windowed, line-numbered body read; same line numbers as `grep` |
@@ -110,7 +114,7 @@ committed. Consequences:
   resume / diff / discard.
 - Front-matter typos reopen the editor with a `# ERROR:` comment explaining
   the problem; fix and save, or close unchanged to abort (draft kept).
-- If the issue changes concurrently while you edit (Claude flipping a status
+- If the issue changes concurrently while you edit (the AI flipping a status
   is the common case), non-overlapping changes merge automatically via
   `git merge-file`; overlapping changes reopen the editor with conflict
   markers.
@@ -150,42 +154,10 @@ database is never migrated implicitly — every command errors and points at
 
 `issues check` itself is a read-only self-audit you can run any time.
 
-## Direct SQL access
+## Teaching your AI assistant to use it
 
-Read-only ad-hoc queries via the `sqlite3` CLI are fine, e.g.:
-
-```sh
-sqlite3 .issues/issues.db "SELECT id, title FROM issue WHERE status='abandoned'"
-```
-
-All **writes** must go through the `issues` CLI so timestamps and edit-flow
-invariants hold. If other tooling ever does write, it must run
-`PRAGMA foreign_keys=ON` first: SQLite leaves foreign keys unenforced by
-default, and the schema relies on them (`issue.status` references the
-`status` vocabulary table, whose rows change only with a schema-version
-bump; `issue.parent_id` references `issue.id`). The CLI always sets the
-pragma on its own connections.
-
-## CLAUDE.md snippet
-
-`issues init` prints this block; add it to your project's `CLAUDE.md`:
-
-```markdown
-## Issue tracker
-This project tracks plans/bugs/todos in a local db via the `issues` CLI (not markdown files, not GitHub).
-- `issues list` - open items (idea/agreed/in-progress/doc). Run at session start to load current state; check before proposing new work.
-- `issues show <id>` - full item with markdown body. Read the full plan before implementing it.
-- `issues add "title" --status idea --body -` - body markdown on stdin; `--parent <id>` for subtasks.
-- `issues grep <regex>` - search all open issues (`-i`, `-C n`, `--all`); output is ripgrep-style with `#id` headings.
-- `issues read <id> --offset <line> --limit <n>` - windowed line-numbered body read (same line numbers as grep); use for large bodies.
-- `issues update <id> --status <s>` - statuses: idea, agreed, in-progress, done, abandoned, doc.
-- `issues str-replace <id> --old <text> --new <text>` - targeted body edit; `--old` must match exactly once (same rules as your Edit tool).
-- `issues set-body <id> --body -` - replace whole body from stdin.
-Issue bodies are the authoritative specs: an implementation plan lives in its issue body and should be buildable from `issues show <id>` alone.
-Workflow: file new plans as `idea`; set `agreed` only after the human has reviewed the issue body and explicitly OK'd it. Split big plans into child issues; set `in-progress` when you start, `done` when implemented, `abandoned` if we drop it. Status `doc` marks a living document (memory, spec, conventions) that stays open and is kept current instead of ever closing.
-Done and abandoned issues are frozen history: never edit them to keep them current; decisions that supersede them belong in the new issue or commit that made the change. Status updates and edits the human explicitly asks for are fine.
-Unprompted edits: the AI may edit issues that are part of the current discussion or task; for issues outside that scope, propose the change or file a new issue instead.
-Do not reference issue ids in commit messages: the issue db is not part of the git repository, so commit messages must stand on their own.
-Use plain `-` instead of em-dashes in issue bodies and other planning docs; humans editing them can't easily type em-dashes, and mixed dashes break `str-replace` and `grep`.
-Never use `issues edit` (interactive; human-only). Read-only SQL on `.issues/issues.db` is OK; all writes go through the CLI.
-```
+`issues init` prints a ready-to-paste instructions block — the commands, the
+status workflow, and the editing rules — for whatever file your assistant
+reads as project instructions (`CLAUDE.md` and equivalents). Paste it in
+verbatim. `init` is idempotent, so re-running it in an existing project just
+reprints the block.
