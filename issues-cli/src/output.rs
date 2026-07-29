@@ -53,6 +53,13 @@ pub fn render_show(issue: &Issue) -> String {
     out
 }
 
+/// Render standalone markdown — no issue header, no front-matter — with the
+/// same terminal skin `show` uses for issue bodies. Wrapping is termimad's,
+/// so the text reflows to the terminal width.
+pub fn render_markdown(text: &str) -> String {
+    skin().term_text(text).to_string()
+}
+
 /// Compact relative time: `now`, `5m`, `2h`, `3d`.
 pub fn relative_secs(secs: u64, zero: &str) -> String {
     if secs < 60 {

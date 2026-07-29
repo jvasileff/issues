@@ -19,25 +19,29 @@ use rusqlite::Connection;
 
 use crate::model::Status;
 
-const AI_INSTRUCTIONS_SNIPPET: &str = "\
+/// The pointer block the user pastes into CLAUDE.md / AGENTS.md. Deliberately
+/// tiny and stable: it names the tool and tells the assistant to fetch the real
+/// instructions, so upgrading the binary upgrades the instructions without the
+/// user editing any project file.
+const AI_INSTRUCTIONS_POINTER: &str = "\
 ## Issue tracker
-This project tracks plans/bugs/todos in a local db via the `issues` CLI (not markdown files, not GitHub).
-- `issues list` - open items (idea/agreed/in-progress/doc). Run at session start to load current state; check before proposing new work.
-- `issues show <id>` - full item with markdown body. Read the full plan before implementing it.
-- `issues add \"title\" --status idea --body -` - body markdown on stdin; `--parent <id>` for subtasks.
-- `issues grep <regex>` - search all open issues (`-i`, `-C n`, `--all`); output is ripgrep-style with `#id` headings.
-- `issues read <id> --offset <line> --limit <n>` - windowed line-numbered body read (same line numbers as grep); use for large bodies.
-- `issues update <id> --status <s>` - statuses: idea, agreed, in-progress, done, abandoned, doc.
-- `issues str-replace <id> --old <text> --new <text>` - targeted body edit; `--old` must match exactly once (same rules as your file-edit tool).
-- `issues set-body <id> --body -` - replace whole body from stdin.
-Issue bodies are the authoritative specs: an implementation plan lives in its issue body and should be buildable from `issues show <id>` alone.
-Workflow: file new plans as `idea`; set `agreed` only after the human has reviewed the issue body and explicitly OK'd it. Split big plans into child issues; set `in-progress` when you start, `done` when implemented, `abandoned` if we drop it. Status `doc` marks a living document (memory, spec, conventions) that stays open and is kept current instead of ever closing.
-Done and abandoned issues are frozen history: never edit them to keep them current; decisions that supersede them belong in the new issue or commit that made the change. Status updates and edits the human explicitly asks for are fine.
-Unprompted edits: the AI may edit issues that are part of the current discussion or task; for issues outside that scope, propose the change or file a new issue instead.
-Do not reference issue ids in commit messages: the issue db is not part of the git repository, so commit messages must stand on their own.
-Use plain `-` instead of em-dashes in issue bodies and other planning docs; humans editing them can't easily type em-dashes, and mixed dashes break `str-replace` and `grep`.
-Never use `issues edit` (interactive; human-only). Read-only SQL on `.issues/issues.db` is OK; all writes go through the CLI.
+
+This project tracks plans/bugs/todos in a local db via the `issues` CLI.
+
+Run `issues instructions` at the start of every session; it prints usage
+instructions for the tool.
 ";
+
+/// The working agreement itself, addressed to the assistant. Kept in its own
+/// file so it can be edited as the markdown it is; it is compiled in, so the
+/// binary stays self-contained and the file is not read at runtime.
+///
+/// Two things to preserve when editing it. Blank lines between blocks are
+/// load-bearing: on a TTY the text goes through the markdown renderer, and
+/// without them the bullets and paragraphs run together. Lines are left
+/// unwrapped — termimad reflows to the terminal width, and a piped run lands
+/// in a context window where hard wraps only add noise.
+const AI_INSTRUCTIONS: &str = include_str!("ai_instructions.md");
 
 const STATUS_HELP: &str = "\
 Statuses (lifecycle: idea -> agreed -> in-progress -> done; abandoned from anywhere;
@@ -112,11 +116,30 @@ enum Cmd {
     /// directory used by the interactive edit flow, and a .issues/.gitignore
     /// containing '*' so the whole directory stays out of git. Idempotent:
     /// safe to run in an already-initialized project. Afterwards it prints a
-    /// ~10-line snippet to paste into whatever file your AI assistant reads
-    /// as project instructions (CLAUDE.md, AGENTS.md, and equivalents), so
-    /// the assistant knows the tool exists.
+    /// short block to paste into whatever file your AI assistant reads as
+    /// project instructions (CLAUDE.md, CLAUDE.local.md, AGENTS.md, and
+    /// equivalents). That
+    /// block only points at 'issues instructions', which prints the full
+    /// working agreement, so a binary upgrade updates what the assistant
+    /// reads without anyone editing the project file.
     #[command(after_long_help = "Example:\n  issues init")]
     Init,
+
+    /// Print the working agreement for an AI assistant using this tool
+    ///
+    /// The full instructions: the command surface, the status vocabulary and
+    /// what each status commits you to, and the conventions that keep the
+    /// database useful (bodies are the authoritative specs, done and
+    /// abandoned issues are frozen history, issue ids stay out of commit
+    /// messages because the database is not in the repository). Assistants
+    /// are pointed here by the block 'issues init' prints; the output is the
+    /// instructions themselves, addressed to the assistant, not a
+    /// description of them. On a TTY the markdown is rendered and paged the
+    /// way 'issues show' renders a body; piped or redirected — the case that
+    /// matters, since this is written for a program to read — it is the raw
+    /// markdown, unchanged. NO_COLOR also forces the raw form.
+    #[command(after_long_help = "Example:\n  issues instructions")]
+    Instructions,
 
     /// List issues (default: open only — idea, agreed, in-progress, doc)
     ///
@@ -446,9 +469,9 @@ fn resolve_body(arg: Option<&str>) -> Result<String> {
     }
 }
 
-/// Whether `show` uses the rendered view: --plain and NO_COLOR force the
-/// canonical serialization; otherwise render iff stdout is a TTY
-/// (`ISSUES_ASSUME_TTY=1` counts as one — test hook).
+/// Whether `show` and `instructions` use the rendered view: --plain (where
+/// the command has one) and NO_COLOR force the plain text; otherwise render
+/// iff stdout is a TTY (`ISSUES_ASSUME_TTY=1` counts as one — test hook).
 fn show_rendered(plain: bool) -> bool {
     if plain || std::env::var("NO_COLOR").is_ok_and(|v| !v.is_empty()) {
         return false;
@@ -519,10 +542,19 @@ fn run(cli: Cli) -> Result<()> {
             );
             println!();
             println!(
-                "Add the following to your AI assistant's project instructions (CLAUDE.md, AGENTS.md, ...):"
+                "Add the following to your AI assistant's project instructions (CLAUDE.md, CLAUDE.local.md, AGENTS.md, ...):"
             );
             println!();
-            print!("{AI_INSTRUCTIONS_SNIPPET}");
+            print!("{AI_INSTRUCTIONS_POINTER}");
+            Ok(())
+        }
+
+        Cmd::Instructions => {
+            if show_rendered(false) {
+                page_or_print(&output::render_markdown(AI_INSTRUCTIONS));
+            } else {
+                print!("{AI_INSTRUCTIONS}");
+            }
             Ok(())
         }
 

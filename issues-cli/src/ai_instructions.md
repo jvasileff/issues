@@ -1,5 +1,6 @@
 ## Issue tracker
-This project tracks plans/bugs/todos in a local db via the `issues` CLI (not markdown files, not GitHub).
+
+This project tracks plans/bugs/todos in a local db via the `issues` CLI.
 
 - `issues list` - open items (idea/agreed/in-progress/doc). Run at session start to load current state; check before proposing new work.
 - `issues show <id>` - full item with markdown body. Read the full plan before implementing it.

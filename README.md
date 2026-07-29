@@ -74,7 +74,8 @@ help text is intentionally exhaustive.
 
 | Command | Purpose |
 |---|---|
-| `issues init` | Create `.issues/` (db, drafts dir, `.gitignore`); prints the AI instructions snippet |
+| `issues init` | Create `.issues/` (db, drafts dir, `.gitignore`); prints the block to paste into CLAUDE.md / AGENTS.md |
+| `issues instructions` | Print the working agreement for an AI assistant; what the pasted block points at |
 | `issues list [--all] [--status s] [--parent id]` | Aligned listing; open issues only by default (the anti-rot mechanism); children indent beneath their parent |
 | `issues show <id>` | Full issue: front-matter + markdown body |
 | `issues read <id> [--offset n] [--limit n]` | Windowed, line-numbered body read; same line numbers as `grep` |
@@ -155,11 +156,17 @@ database is never migrated implicitly — every command errors and points at
 
 ## Teaching your AI assistant to use it
 
-`issues init` prints a ready-to-paste instructions block — the commands, the
-status workflow, and the editing rules — for whatever file your assistant
-reads as project instructions (`CLAUDE.md` and equivalents). Paste it in
-verbatim. `init` is idempotent, so re-running it in an existing project just
-reprints the block.
+`issues init` prints a three-line block to paste into whatever file your
+assistant reads as project instructions (`CLAUDE.md` and equivalents). The
+block does not carry the instructions itself; it points the assistant at
+`issues instructions` at the start of every session, and that command prints
+the usage instructions — the commands, the status workflow, and the editing
+rules.
+
+The indirection is the point: the instructions ship with the binary, so
+upgrading `issues` updates what your assistant reads, in every project, with
+no file to re-paste and nothing to keep in sync. `init` is idempotent, so
+re-running it in an existing project just reprints the block.
 
 ## License
 

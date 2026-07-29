@@ -81,10 +81,36 @@ fn draft_path(dir: &Path, id: i64) -> PathBuf {
 
 // ---------------------------------------------------------------- §13.1
 
+/// The pasted block only points at 'issues instructions', so that command
+/// carries the whole working agreement and must run anywhere — including in a
+/// directory with no .issues/ above it, which is where an assistant reaching
+/// for it first may well be.
+#[test]
+fn instructions_are_self_contained_and_need_no_project() {
+    let bare = tempfile::tempdir().unwrap();
+    let out = stdout_of(bare.path(), &["instructions"]);
+    assert!(out.starts_with("## Issue tracker"));
+    for expected in [
+        "issues list",
+        "issues str-replace",
+        "idea, agreed, in-progress, done, abandoned, doc",
+        "Do not reference issue ids in commit messages",
+        "Never use `issues edit`",
+    ] {
+        assert!(out.contains(expected), "instructions missing {expected:?}");
+    }
+
+    // The block init prints is a pointer, not a copy: none of the substance
+    // above may be duplicated there, or it goes stale exactly as before.
+    let pointer = stdout_of(bare.path(), &["init"]);
+    assert!(pointer.contains("`issues instructions`"));
+    assert!(!pointer.contains("Do not reference issue ids in commit messages"));
+}
+
 #[test]
 fn init_add_list_show_roundtrip() {
     let t = project();
-    // init is idempotent and prints the AI instructions snippet
+    // init is idempotent and prints the block pointing at 'issues instructions'
     cmd(t.path())
         .arg("init")
         .assert()
@@ -92,7 +118,8 @@ fn init_add_list_show_roundtrip() {
         .stdout(predicate::str::contains(
             "Add the following to your AI assistant's project instructions",
         ))
-        .stdout(predicate::str::contains("## Issue tracker"));
+        .stdout(predicate::str::contains("## Issue tracker"))
+        .stdout(predicate::str::contains("`issues instructions`"));
     assert_eq!(
         fs::read_to_string(t.path().join(".issues/.gitignore")).unwrap(),
         "*\n"
