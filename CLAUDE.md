@@ -10,7 +10,7 @@ This project tracks plans/bugs/todos in a local db via the `issues` CLI (not mar
 - `issues grep <regex>` - search all open issues (`-i`, `-C n`, `--all`); output is ripgrep-style with `#id` headings.
 - `issues read <id> --offset <line> --limit <n>` - windowed line-numbered body read (same line numbers as grep); use for large bodies.
 - `issues update <id> --status <s>` - statuses: idea, agreed, in-progress, done, abandoned, doc.
-- `issues str-replace <id> --old <text> --new <text>` - targeted body edit; `--old` must match exactly once (same rules as your Edit tool).
+- `issues str-replace <id> --old <text> --new <text>` - targeted body edit; `--old` must match exactly once (same rules as your file-edit tool).
 - `issues set-body <id> --body -` - replace whole body from stdin.
 
 Issue bodies are the authoritative specs: an implementation plan lives in its issue body and should be buildable from `issues show <id>` alone.

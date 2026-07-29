@@ -84,13 +84,13 @@ fn draft_path(dir: &Path, id: i64) -> PathBuf {
 #[test]
 fn init_add_list_show_roundtrip() {
     let t = project();
-    // init is idempotent and prints the CLAUDE.md snippet
+    // init is idempotent and prints the AI instructions snippet
     cmd(t.path())
         .arg("init")
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "Add the following to your project's CLAUDE.md",
+            "Add the following to your AI assistant's project instructions",
         ))
         .stdout(predicate::str::contains("## Issue tracker"));
     assert_eq!(

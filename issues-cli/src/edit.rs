@@ -174,7 +174,7 @@ fn run_loop(conn: &mut Connection, paths: &DraftPaths, mut ctx: LoopCtx) -> Resu
                     }
                     merge::MergeOutcome::Conflict(conflicted) => {
                         let header = "\
-# CONFLICT: this issue was modified while you were editing (likely by Claude).
+# CONFLICT: this issue was modified while you were editing (likely by the AI).
 # Resolve the <<<<<<< / >>>>>>> sections (||||||| marks the common base),
 # save, and close.
 # Close without changes to abort (draft will be kept).

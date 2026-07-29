@@ -8,10 +8,10 @@ use termimad::{CompoundStyle, MadSkin, StyledChar};
 
 use crate::model::Issue;
 
-/// Terminal markdown skin, styled after Claude Code's own renderer:
-/// headings bold (H1 also italic + underline), no background patches
-/// anywhere, inline code in an indigo accent, fenced code left plain,
-/// `-` bullets, dim `>` quote marks. Readable on dark and light terminals.
+/// Terminal markdown skin: headings bold (H1 also italic + underline), no
+/// background patches anywhere, inline code in an indigo accent, fenced code
+/// left plain, `-` bullets, dim `>` quote marks. Readable on dark and light
+/// terminals.
 fn skin() -> MadSkin {
     let mut skin = MadSkin::no_style();
     skin.bold = CompoundStyle::with_attr(Attribute::Bold);

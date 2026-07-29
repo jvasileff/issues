@@ -19,7 +19,7 @@ use rusqlite::Connection;
 
 use crate::model::Status;
 
-const CLAUDE_SNIPPET: &str = "\
+const AI_INSTRUCTIONS_SNIPPET: &str = "\
 ## Issue tracker
 This project tracks plans/bugs/todos in a local db via the `issues` CLI (not markdown files, not GitHub).
 - `issues list` - open items (idea/agreed/in-progress/doc). Run at session start to load current state; check before proposing new work.
@@ -28,7 +28,7 @@ This project tracks plans/bugs/todos in a local db via the `issues` CLI (not mar
 - `issues grep <regex>` - search all open issues (`-i`, `-C n`, `--all`); output is ripgrep-style with `#id` headings.
 - `issues read <id> --offset <line> --limit <n>` - windowed line-numbered body read (same line numbers as grep); use for large bodies.
 - `issues update <id> --status <s>` - statuses: idea, agreed, in-progress, done, abandoned, doc.
-- `issues str-replace <id> --old <text> --new <text>` - targeted body edit; `--old` must match exactly once (same rules as your Edit tool).
+- `issues str-replace <id> --old <text> --new <text>` - targeted body edit; `--old` must match exactly once (same rules as your file-edit tool).
 - `issues set-body <id> --body -` - replace whole body from stdin.
 Issue bodies are the authoritative specs: an implementation plan lives in its issue body and should be buildable from `issues show <id>` alone.
 Workflow: file new plans as `idea`; set `agreed` only after the human has reviewed the issue body and explicitly OK'd it. Split big plans into child issues; set `in-progress` when you start, `done` when implemented, `abandoned` if we drop it. Status `doc` marks a living document (memory, spec, conventions) that stays open and is kept current instead of ever closing.
@@ -44,7 +44,7 @@ Statuses (lifecycle: idea -> agreed -> in-progress -> done; abandoned from anywh
 doc sits outside the lifecycle; transitions are not enforced — the vocabulary is
 the feature):
   idea         brainstorming; not yet agreed to
-  agreed       human and Claude have agreed this should happen
+  agreed       human and AI have agreed this should happen
   in-progress  actively being implemented
   done         implemented (and merged/landed as applicable)
   abandoned    deliberately not doing this
@@ -59,14 +59,13 @@ the database and all output.";
 
 fn long_about() -> String {
     format!(
-        "Project-local issue tracker for human + Claude Code collaboration.\n\n\
+        "Project-local issue tracker for rapid AI-assisted development.\n\n\
          Issues live in a single SQLite database at .issues/issues.db, found by\n\
          walking up from the current directory ('issues init' creates it). Both\n\
-         the human and Claude Code use this same binary: the scriptable\n\
-         subcommands (list, show, read, add, update, set-body, str-replace,\n\
-         grep, check, upgrade) for automation, and the interactive 'edit'\n\
-         subcommand — which checks an issue out into $EDITOR, git-commit\n\
-         style — for humans.\n\n\
+         the human and the AI use this same binary: the scriptable subcommands\n\
+         (list, show, read, add, update, set-body, str-replace, grep, check,\n\
+         upgrade) for automation, and the interactive 'edit' subcommand — which\n\
+         checks an issue out into $EDITOR, git-commit style — for humans.\n\n\
          {STATUS_HELP}\n\n\
          Schema versioning: the database records a schema version and a binary\n\
          refuses a database it does not match exactly. A newer database needs\n\
@@ -76,8 +75,8 @@ fn long_about() -> String {
          Multi-line bodies: 'add' and 'set-body' accept '--body -' to read the\n\
          markdown body from stdin.\n\n\
          Concurrency: the database is opened in WAL mode and every edit is\n\
-         optimistically locked, so multiple Claude Code sessions plus a human\n\
-         editor session can safely work at once."
+         optimistically locked, so multiple AI sessions plus a human editor\n\
+         session can safely work at once."
     )
 }
 
@@ -85,7 +84,7 @@ fn long_about() -> String {
 #[command(
     name = "issues",
     version,
-    about = "Project-local issue tracker for human + Claude Code collaboration",
+    about = "Project-local issue tracker for rapid AI-assisted development",
     long_about = long_about(),
 )]
 struct Cli {
@@ -113,8 +112,9 @@ enum Cmd {
     /// directory used by the interactive edit flow, and a .issues/.gitignore
     /// containing '*' so the whole directory stays out of git. Idempotent:
     /// safe to run in an already-initialized project. Afterwards it prints a
-    /// ~10-line snippet to add to the project's CLAUDE.md so Claude Code
-    /// knows the tool exists.
+    /// ~10-line snippet to paste into whatever file your AI assistant reads
+    /// as project instructions (CLAUDE.md, AGENTS.md, and equivalents), so
+    /// the assistant knows the tool exists.
     #[command(after_long_help = "Example:\n  issues init")]
     Init,
 
@@ -193,7 +193,7 @@ enum Cmd {
     ///
     /// Creates an issue with the given title (default status: idea). Pass
     /// '--body -' to read a multi-line markdown body from stdin — the main
-    /// path for scripted/Claude use. '--parent <id>' files it as a subtask.
+    /// path for scripted and AI use. '--parent <id>' files it as a subtask.
     /// '-e/--edit' opens the new issue in $EDITOR immediately (interactive;
     /// requires a TTY). Prints the new id as 'created #<id>'.
     #[command(
@@ -335,12 +335,12 @@ enum Cmd {
     /// errors in the front-matter reopen the editor with an explanatory
     /// '# ERROR:' comment (fix and save, or close unchanged to abort,
     /// keeping the draft). If the issue is modified concurrently while you
-    /// edit (e.g. by Claude), non-overlapping changes are merged
+    /// edit (e.g. by the AI), non-overlapping changes are merged
     /// automatically; overlapping changes reopen the editor with conflict
     /// markers to resolve.
     ///
-    /// Requires a TTY. Scripts and Claude must use the scriptable commands
-    /// (update, set-body, str-replace) instead.
+    /// Requires a TTY. Scripts and AI assistants must use the scriptable
+    /// commands (update, set-body, str-replace) instead.
     #[command(after_long_help = "Example:\n  issues edit 42")]
     Edit {
         #[arg(value_parser = parse_id)]
@@ -518,9 +518,11 @@ fn run(cli: Cli) -> Result<()> {
                 if existed { "verified" } else { "initialized" }
             );
             println!();
-            println!("Add the following to your project's CLAUDE.md:");
+            println!(
+                "Add the following to your AI assistant's project instructions (CLAUDE.md, AGENTS.md, ...):"
+            );
             println!();
-            print!("{CLAUDE_SNIPPET}");
+            print!("{AI_INSTRUCTIONS_SNIPPET}");
             Ok(())
         }
 
