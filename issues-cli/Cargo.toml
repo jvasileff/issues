@@ -1,6 +1,6 @@
 [package]
 name = "issues-cli"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 # Floor set by libsqlite3-sys 0.38.1 (via rusqlite 0.40), whose build.rs uses
 # the cfg_select! macro stabilized in Rust 1.95.0. The crate declares no MSRV
