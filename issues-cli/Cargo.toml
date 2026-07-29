@@ -1,5 +1,5 @@
 [package]
-name = "issues"
+name = "issues-cli"
 version = "0.1.0"
 edition = "2024"
 # Floor set by libsqlite3-sys 0.38.1 (via rusqlite 0.40), whose build.rs uses
@@ -8,6 +8,10 @@ edition = "2024"
 # "unstable library feature cfg_select" error instead of a clear message.
 rust-version = "1.95"
 description = "Project-local issue tracker for human + Claude Code collaboration"
+
+[[bin]]
+name = "issues"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"

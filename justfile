@@ -24,4 +24,4 @@ lint:
 
 # install the issues CLI
 install:
-    cargo install --path issues
+    cargo install --path issues-cli
