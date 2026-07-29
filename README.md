@@ -161,3 +161,7 @@ status workflow, and the editing rules — for whatever file your assistant
 reads as project instructions (`CLAUDE.md` and equivalents). Paste it in
 verbatim. `init` is idempotent, so re-running it in an existing project just
 reprints the block.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

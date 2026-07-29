@@ -8,6 +8,7 @@ edition = "2024"
 # "unstable library feature cfg_select" error instead of a clear message.
 rust-version = "1.95"
 description = "Project-local issue tracker for rapid AI-assisted development"
+license = "MIT"
 
 [[bin]]
 name = "issues"
