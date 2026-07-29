@@ -23,7 +23,7 @@ output, no git sync. The database directory is kept out of git entirely
 
 ## Install
 
-Requires stable Rust and — for the `edit` merge path — `git` on PATH.
+Requires stable Rust. The built binary has no external runtime dependencies.
 
 ```sh
 cargo install --path issues-cli
@@ -115,9 +115,8 @@ committed. Consequences:
 - Front-matter typos reopen the editor with a `# ERROR:` comment explaining
   the problem; fix and save, or close unchanged to abort (draft kept).
 - If the issue changes concurrently while you edit (the AI flipping a status
-  is the common case), non-overlapping changes merge automatically via
-  `git merge-file`; overlapping changes reopen the editor with conflict
-  markers.
+  is the common case), non-overlapping changes merge automatically;
+  overlapping changes reopen the editor with diff3-style conflict markers.
 
 The front matter looks like YAML so editors highlight it, but it is a strict
 line format with no quoting rules: values run to the end of the line

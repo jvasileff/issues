@@ -18,6 +18,7 @@ path = "src/main.rs"
 anyhow = "1"
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
+diffy = "0.5.1"
 regex = "1"
 rusqlite = { version = "0.40", features = ["bundled"] }
 termimad = "0.35"

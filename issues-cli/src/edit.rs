@@ -44,7 +44,7 @@ pub fn edit(conn: &mut Connection, root: &Path, id: i64) -> Result<()> {
     if paths.draft.exists() {
         resume(conn, root, &paths)
     } else {
-        fresh_checkout(conn, root, &paths)
+        fresh_checkout(conn, &paths)
     }
 }
 
@@ -56,14 +56,13 @@ pub fn resume_draft(conn: &mut Connection, root: &Path, id: i64) -> Result<()> {
     resume(conn, root, &paths)
 }
 
-fn fresh_checkout(conn: &mut Connection, root: &Path, paths: &DraftPaths) -> Result<()> {
+fn fresh_checkout(conn: &mut Connection, paths: &DraftPaths) -> Result<()> {
     let issue = db::get_issue(conn, paths.id)?;
     let text = checkout::render(&issue, true);
     paths.write_all(&text, &text, &issue.updated_at)?;
     launch_editor(&paths.draft)?;
     run_loop(
         conn,
-        root,
         paths,
         LoopCtx {
             prev_text: text.clone(),
@@ -85,12 +84,7 @@ struct LoopCtx {
 
 /// The edit loop: parse / retry / lock-check / merge / commit, until the
 /// edit lands, the user aborts, or there was nothing to save.
-fn run_loop(
-    conn: &mut Connection,
-    root: &Path,
-    paths: &DraftPaths,
-    mut ctx: LoopCtx,
-) -> Result<()> {
+fn run_loop(conn: &mut Connection, paths: &DraftPaths, mut ctx: LoopCtx) -> Result<()> {
     loop {
         let raw = fs::read_to_string(&paths.draft)
             .with_context(|| format!("cannot read draft {}", paths.display()))?;
@@ -168,13 +162,7 @@ fn run_loop(
             db::EditCommit::Stale => {
                 let fresh = db::get_issue(conn, paths.id)?;
                 let theirs_text = checkout::render(&fresh, true);
-                match merge::merge_file(
-                    &paths.dir,
-                    paths.id,
-                    &ctx.base_text,
-                    &stripped,
-                    &theirs_text,
-                )? {
+                match merge::three_way(&ctx.base_text, &stripped, &theirs_text) {
                     merge::MergeOutcome::Clean(merged) => {
                         fs::write(&paths.draft, &merged)?;
                         paths.write_base(&theirs_text, &fresh.updated_at)?;
@@ -187,7 +175,8 @@ fn run_loop(
                     merge::MergeOutcome::Conflict(conflicted) => {
                         let header = "\
 # CONFLICT: this issue was modified while you were editing (likely by Claude).
-# Resolve the <<<<<<< / >>>>>>> sections, save, and close.
+# Resolve the <<<<<<< / >>>>>>> sections (||||||| marks the common base),
+# save, and close.
 # Close without changes to abort (draft will be kept).
 ";
                         fs::write(&paths.draft, format!("{header}{conflicted}"))?;
@@ -196,19 +185,6 @@ fn run_loop(
                         ctx.base_token = fresh.updated_at;
                         ctx.prev_text = conflicted;
                         launch_editor(&paths.draft)?;
-                    }
-                    merge::MergeOutcome::NoGit => {
-                        eprintln!(
-                            "issue #{} was modified while you were editing, and `git` (required for automatic merge) is not on PATH.",
-                            paths.id
-                        );
-                        let _ = drafts::print_diff(conn, root, paths.id);
-                        eprintln!(
-                            "draft kept at {}; reconcile manually with the scriptable commands, or install git and rerun 'issues edit {}'",
-                            paths.display(),
-                            paths.id
-                        );
-                        process::exit(1);
                     }
                 }
             }
@@ -248,7 +224,6 @@ fn resume(conn: &mut Connection, root: &Path, paths: &DraftPaths) -> Result<()> 
                 launch_editor(&paths.draft)?;
                 return run_loop(
                     conn,
-                    root,
                     paths,
                     LoopCtx {
                         prev_text: base_text.clone(),
@@ -270,7 +245,7 @@ fn resume(conn: &mut Connection, root: &Path, paths: &DraftPaths) -> Result<()> 
                 };
                 if matches!(confirm.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
                     paths.delete()?;
-                    return fresh_checkout(conn, root, paths);
+                    return fresh_checkout(conn, paths);
                 }
             }
             "q" | "" => return Ok(()),

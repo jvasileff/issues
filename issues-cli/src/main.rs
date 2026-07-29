@@ -336,9 +336,8 @@ enum Cmd {
     /// '# ERROR:' comment (fix and save, or close unchanged to abort,
     /// keeping the draft). If the issue is modified concurrently while you
     /// edit (e.g. by Claude), non-overlapping changes are merged
-    /// automatically via 'git merge-file' (git must be installed);
-    /// overlapping changes reopen the editor with conflict markers to
-    /// resolve.
+    /// automatically; overlapping changes reopen the editor with conflict
+    /// markers to resolve.
     ///
     /// Requires a TTY. Scripts and Claude must use the scriptable commands
     /// (update, set-body, str-replace) instead.
