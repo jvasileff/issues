@@ -1,6 +1,3 @@
-## References in code and commits
-Source files and commit messages are the product's permanent, immutable record. Never reference material that is not itself permanently part of the repository: no issue-tracker ids, no gitignored or local-only documents, and above all no section references (like "§7.2 of the plan") - they point into a document that other checkouts don't have and that can change, silently invalidating the section numbers. When outside context matters, write the substance directly into the comment or commit message, or into a document checked into the repo.
-
 ## Issue tracker
 This project tracks plans/bugs/todos in a local db via the `issues` CLI (not markdown files, not GitHub).
 
